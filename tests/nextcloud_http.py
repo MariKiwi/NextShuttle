@@ -15,7 +15,7 @@ class Client:
         self.opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()),HTTPSHandler(context=ssl.create_default_context(cafile='ci-state/ca.crt')))
         with self.opener.open(BASE+'/login') as r:page=r.read().decode()
         token=html.unescape(re.search(r'data-requesttoken="([^"]+)"',page).group(1))
-        body=urlencode({'user':user,'password':password,'requesttoken':token}).encode()
+        body=urlencode({'user':user,'password':password,'requesttoken':token,'redirect_url':'/index.php/apps/nextshuttle/'}).encode()
         with self.opener.open(Request(BASE+'/login',data=body,headers={'Origin':BASE,'Referer':BASE+'/login'})) as r:
             page=r.read().decode()
             assert '/login' not in r.url,'Login did not establish a session for '+user

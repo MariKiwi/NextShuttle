@@ -78,3 +78,5 @@ The relay journal is bounded at 100,000 records and fails closed when full. Expo
 Finish [staging.md](staging.md) before opening the public route.
 
 Native LMD scans hold a shared definition lock. The updater holds an exclusive lock and records hashes of the complete definition set after a successful upstream check. Missing/stale receipts, partial updates or changed definition files block clearance; archive publication timestamps alone do not represent the last update check.
+
+Incoming creation uses exclusive `xb` mode through Nextcloud storage and updates its native file cache. Storage backends that cannot provide exclusive creation block import. Test your actual local/external/encrypted storage backend during staging; no overwrite fallback is provided. LMD verification age measures a successful upstream update check; it does not imply that the publisher released new signatures that day. Engine and signature versions accompany scan receipts.
