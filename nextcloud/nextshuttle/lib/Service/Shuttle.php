@@ -202,36 +202,36 @@ class Shuttle {
             if ($old['state']==='stored') { $this->report('upload_imported',$id,$inbox['id']);$this->transfers->imported($id,(int)$old['node_id'],'done'); }
             $this->relay->revoke('uploads',$id);return;
         }
-        $plain=$this->stage(); $cipher=$this->stage();
+        $plain=$this->stage(); $cipher=$this->stage();$phase='decrypt';
         try {
             $out=fopen($cipher,'wb'); try { $this->relay->fetch($id,$out,(int)($upload['bytes']??0)); } finally { fclose($out); }
             $in=fopen($cipher,'rb'); $out=fopen($plain,'wb');
             try { $meta=FileCrypto::decrypt($in,$out,null,base64_decode($inbox['secret']['pair'],true)); }
             catch (\UnexpectedValueException|\SodiumException|\JsonException $e) { throw new ScanRejected('content_rejected'); }
             finally { fclose($in); fclose($out); }
-            $this->policy->file($meta['name'],$meta['size']); $receipt=$this->relay->scan($plain,$meta['name']); $this->report('scan_clean',$id,$inbox['id']);
+            $phase='scan';$this->policy->file($meta['name'],$meta['size']); $receipt=$this->relay->scan($plain,$meta['name']); $this->report('scan_clean',$id,$inbox['id']);
             // Stable, reserved name allows safe reconciliation if the process dies after file creation.
             $name='shuttle-'.$id.'-'.mb_strcut($meta['name'],0,190,'UTF-8');
             $plan=$this->transfers->plan($id,$inbox['id'],$name,$receipt['sha256']);
-            $folder=$this->node($inbox['owner_uid'],$inbox['node_id'],'inbox');
+            $phase='folder_lock';$folder=$this->node($inbox['owner_uid'],$inbox['node_id'],'inbox');
             $folder->lock(ILockingProvider::LOCK_EXCLUSIVE);
             try {
-            if ($folder->nodeExists($plan['name'])) {
+            $phase='destination_check';if ($folder->nodeExists($plan['name'])) {
                 $file=$folder->get($plan['name']);
                 if (!$file instanceof File) { throw new \RuntimeException('Import name conflict'); }
                 $stream=$file->fopen('rb'); try { $hash=hash_init('sha256'); hash_update_stream($hash,$stream); $actual=hash_final($hash); } finally { if (is_resource($stream)) { fclose($stream); } }
                 if ($actual!==$receipt['sha256']) { throw new \RuntimeException('Import conflict requires review'); }
             } else {
-                if ($folder->getFreeSpace()>=0&&$folder->getFreeSpace()<$meta['size']) { throw new \RuntimeException('Nextcloud quota exhausted'); }
-                $stream=fopen($plain,'rb'); try { $file=$folder->newFile($plan['name'],$stream); } finally { if (is_resource($stream)) { fclose($stream); } }
+                $phase='quota_check';if ($folder->getFreeSpace()>=0&&$folder->getFreeSpace()<$meta['size']) { throw new \RuntimeException('Nextcloud quota exhausted'); }
+                $phase='file_creation';$stream=fopen($plain,'rb'); try { $file=$folder->newFile($plan['name'],$stream); } finally { if (is_resource($stream)) { fclose($stream); } }
             }
-            $this->transfers->imported($id,(int)$file->getId());
+            $phase='receipt_commit';$this->transfers->imported($id,(int)$file->getId());
             } finally { $folder->unlock(ILockingProvider::LOCK_EXCLUSIVE); }
             $this->report('upload_imported',$id,$inbox['id']);
             $this->transfers->imported($id,(int)$file->getId(),'done');$this->relay->revoke('uploads',$id);
         } catch (ScanRejected $e) {
             $this->report($e->getMessage(),$id,$inbox['id']); $this->relay->revoke('uploads',$id);
-        } catch (\Throwable $e) { $this->report('scan_unavailable',$id,$inbox['id']); }
+        } catch (\Throwable $e) { error_log('NextShuttle import deferred at '.$phase.' ('.get_class($e).')');$this->report('scan_unavailable',$id,$inbox['id']); }
         finally { @unlink($plain); @unlink($cipher); }
     }
 }
