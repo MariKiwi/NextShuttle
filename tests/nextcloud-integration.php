@@ -35,7 +35,7 @@ check($ready['state']==='ready','Outgoing transfer did not become ready: '.$read
 try { $transfers->get($download['id'],'bob');throw new RuntimeException('Owner isolation bypass'); } catch (\OCP\Files\NotFoundException $expected) {}
 function publicRequest(string $method,string $path,string $body,array $headers=[]): string {
     $raw=file_get_contents('http://relay-public:8080/nextshuttle/api/v1/'.$path,false,stream_context_create(['http'=>[
-        'method'=>$method,'content'=>$body,'header'=>implode("\r\n",$headers),'ignore_errors'=>false,'timeout'=>30]]));
+        'method'=>$method,'content'=>$body,'header'=>implode("\r\n",array_merge($headers,['Content-Length: '.strlen($body)])),'ignore_errors'=>false,'timeout'=>30]]));
     if ($raw===false) { throw new RuntimeException('Public API request failed'); } return $raw;
 }
 $cipher=publicRequest('POST','downloads/'.$ready['id'].'/fetch','',['Authorization: Bearer '.$ready['secret']['token']]);

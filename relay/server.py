@@ -20,6 +20,7 @@ from relay.store import Rejected, Store
 class HardenedHandler(BaseHTTPRequestHandler):
     def parse_request(self):
         if len(self.raw_requestline)>4096:
+            self.requestline="";self.request_version=self.default_request_version;self.command=None
             self.send_error(414);return False
         original=self.rfile
         class HeadersOnly:
