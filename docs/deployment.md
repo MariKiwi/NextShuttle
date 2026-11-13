@@ -31,7 +31,7 @@ docker compose up -d
 docker compose logs --tail=50 shuttle-signatures shuttle-clamd shuttle-ingestion
 ```
 
-The first signature download and ClamAV database load can take several minutes. Both engines must be ready; a running HTTP process alone does not prove readiness. Failed updates retry, and definitions older than 48 hours block scanning. Budget about 6 GiB across configured container memory limits, plus Nextcloud and the host. LMD is free software with narrower Linux/web-malware coverage; it is not a broad commercial scanner replacement.
+The first signature download and ClamAV database load can take several minutes. Both engines must be ready; a running HTTP process alone does not prove readiness. Failed updates retry, and ClamAV definitions or an LMD upstream verification older than 48 hours block scanning. Budget about 6 GiB across configured container memory limits, plus Nextcloud and the host. LMD is free software with narrower Linux/web-malware coverage; it is not a broad commercial scanner replacement.
 
 Root filesystems are read-only, privileges dropped, and plaintext staging uses bounded tmpfs. Disable or encrypt host swap and protect host crash dumps if plaintext-at-rest exposure is in scope. The public relay has no service secrets. The isolated signature updater has no uploaded files or application credentials.
 
@@ -76,3 +76,5 @@ Back up the relay data volume and the Nextcloud database **together with Nextclo
 The relay journal is bounded at 100,000 records and fails closed when full. Export and verify history in private administration before pruning acknowledged older events. Emergency admin access/export remains available at capacity; an access event may not fit at that boundary. Audit storage is not tamper-proof against relay compromise. Use independent append-only logging for that threat. Never reset the relay volume to silence journal-continuity errors; reconcile histories deliberately.
 
 Finish [staging.md](staging.md) before opening the public route.
+
+Native LMD scans hold a shared definition lock. The updater holds an exclusive lock and records hashes of the complete definition set after a successful upstream check. Missing/stale receipts, partial updates or changed definition files block clearance; archive publication timestamps alone do not represent the last update check.

@@ -4,7 +4,7 @@
   <id>nextshuttle</id>
   <name>NextShuttle</name>
   <summary>Private file shuttle and security events</summary>
-  <description>Development build: durable relay audit import and Nextcloud notifications. File transfer and scanning integration is not yet complete.</description>
+  <description>Development build: encrypted public downloads and upload inboxes for private Nextcloud, private dual-engine scanning, sharing policies, audit history and administrator/owner notifications.</description>
   <version>0.2.0</version>
   <licence>agpl</licence>
   <author>NextShuttle contributors</author>

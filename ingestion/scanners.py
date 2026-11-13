@@ -158,13 +158,16 @@ class LMD:
             raise ValueError("Scanner executable must be an absolute path")
 
     def scan(self, path, expected_hash):
+        from ingestion.signatures import verified
+        try:
+            with verified(self.signatures,self.max_age,self.clock):return self._scan(path,expected_hash)
+        except Blocked:raise
+        except (OSError,ValueError,TypeError,KeyError):raise Blocked('stale_or_missing_signatures',self.name)
+
+    def _scan(self, path, expected_hash):
         # Each adapter call gets the exact scan ID, never a shared 'newest' report.
         started = int(self.clock())
         try:
-            for filename in ("maldet.sigs.ver", "md5v2.dat", "sha256v2.dat", "hex.dat"):
-                metadata = (self.signatures / filename).stat()
-                if not metadata.st_size or not -3600 <= self.clock()-metadata.st_mtime <= self.max_age:
-                    raise Blocked("stale_or_missing_signatures", self.name)
             signature_version = (self.signatures / "maldet.sigs.ver").read_text().strip()
             options = "scan_user_access=1,scan_clamscan=0,scan_hashtype=both,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
             code, output = self.runner([self.executable, "--config-option", options, "--scan-all", str(path)], self.timeout)

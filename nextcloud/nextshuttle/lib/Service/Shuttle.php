@@ -219,11 +219,11 @@ class Shuttle {
             if ($folder->nodeExists($plan['name'])) {
                 $file=$folder->get($plan['name']);
                 if (!$file instanceof File) { throw new \RuntimeException('Import name conflict'); }
-                $stream=$file->fopen('rb'); try { $hash=hash_init('sha256'); hash_update_stream($hash,$stream); $actual=hash_final($hash); } finally { fclose($stream); }
+                $stream=$file->fopen('rb'); try { $hash=hash_init('sha256'); hash_update_stream($hash,$stream); $actual=hash_final($hash); } finally { if (is_resource($stream)) { fclose($stream); } }
                 if ($actual!==$receipt['sha256']) { throw new \RuntimeException('Import conflict requires review'); }
             } else {
                 if ($folder->getFreeSpace()>=0&&$folder->getFreeSpace()<$meta['size']) { throw new \RuntimeException('Nextcloud quota exhausted'); }
-                $stream=fopen($plain,'rb'); try { $file=$folder->newFile($plan['name'],$stream); } finally { fclose($stream); }
+                $stream=fopen($plain,'rb'); try { $file=$folder->newFile($plan['name'],$stream); } finally { if (is_resource($stream)) { fclose($stream); } }
             }
             $this->transfers->imported($id,(int)$file->getId());
             } finally { $folder->unlock(ILockingProvider::LOCK_EXCLUSIVE); }

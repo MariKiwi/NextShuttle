@@ -26,6 +26,8 @@ class ScannerTests(unittest.TestCase):
         self.sigs.mkdir()
         for name in ("maldet.sigs.ver", "md5v2.dat", "sha256v2.dat", "hex.dat"):
             (self.sigs / name).write_text("20261113")
+        from ingestion.signatures import LOCK,record_verified
+        (self.sigs/LOCK).touch();record_verified(self.sigs,lambda:self.now)
         self.report = {"schema_version": "1.2", "scanner": {"engine": "native", "hash_type": "both", "version": "2.0.1", "sig_version": "20261113"},
             "reports": [{"scan_id": "261113-1200.1234", "path": str(self.file), "total_files": 1,
             "total_hits": 0, "total_cleaned": 0, "total_quarantined": 0, "started_epoch": self.now, "completed_epoch": self.now}]}
@@ -59,9 +61,22 @@ class ScannerTests(unittest.TestCase):
         for code in (1, 2, 77):
             with self.assertRaises(Blocked):
                 self.lmd(code=code).scan(self.file, self.sha)
-        os.utime(self.sigs / "hex.dat", (self.now-200000, self.now-200000))
+        (self.sigs / "hex.dat").write_text("partial update")
         with self.assertRaises(Blocked):
             self.lmd().scan(self.file, self.sha)
+
+    def test_lmd_stale_receipt_missing_receipt_and_update_lock_block_clearance(self):
+        import fcntl
+        from ingestion.signatures import LOCK,RECEIPT,record_verified
+        record_verified(self.sigs,lambda:self.now-200000)
+        with self.assertRaises(Blocked):self.lmd().scan(self.file,self.sha)
+        (self.sigs/RECEIPT).unlink()
+        with self.assertRaises(Blocked):self.lmd().scan(self.file,self.sha)
+        record_verified(self.sigs,lambda:self.now)
+        with (self.sigs/LOCK).open('r+b') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            with self.assertRaises(Blocked):self.lmd().scan(self.file,self.sha)
+        self.assertEqual(self.lmd().scan(self.file,self.sha).engine,'lmd-native')
 
     def test_clamd_responses_and_freshness_without_socket_permissions(self):
         class Connection:

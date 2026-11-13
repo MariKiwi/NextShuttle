@@ -76,12 +76,9 @@ def handler(root, token, gate_factory):
                 if not match:raise ValueError()
                 updated=datetime.strptime(match[3],'%a %b %d %H:%M:%S %Y').replace(tzinfo=timezone.utc).timestamp()
                 if not -3600<=time.time()-updated<=48*3600:raise ValueError()
-                ages=[]
-                for name in ('maldet.sigs.ver','md5v2.dat','sha256v2.dat','hex.dat'):
-                    metadata=(Path('/usr/local/maldetect/sigs')/name).stat();age=time.time()-metadata.st_mtime
-                    if not metadata.st_size or not -3600<=age<=48*3600:raise ValueError()
-                    ages.append(int(age))
-                self.reply(200,{'ready':True,'clamav':match[1],'clamav_signature_age':int(time.time()-updated),'lmd_signature_age':max(ages)})
+                from ingestion.signatures import verified
+                with verified('/usr/local/maldetect/sigs') as age:
+                    self.reply(200,{'ready':True,'clamav':match[1],'clamav_signature_age':int(time.time()-updated),'lmd_last_verified_age':age})
             except Exception:self.reply(503,{'ready':False,'error':'Scanner or signature health unavailable'})
     return Handler
 

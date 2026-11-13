@@ -119,3 +119,5 @@ also limits damage from vulnerabilities in the scanners and validators themselve
 * https://help.eset.com/essl/11.1/en-US/on_demand_scan_via_terminal.html
 * https://help.eset.com/essl/11.1/en-US/activate.html
 * https://github.com/rfxn/linux-malware-detect
+
+Native LMD scans hold a shared definition lock. The updater holds an exclusive lock and records hashes of the complete definition set after a successful upstream check. Missing/stale receipts, partial updates or changed definition files block clearance; archive publication timestamps alone do not represent the last update check.

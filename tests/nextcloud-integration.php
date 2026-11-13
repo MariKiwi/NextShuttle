@@ -53,7 +53,7 @@ function uploadFixture(array $inbox,string $content,string $name): string {
     publicRequest('PUT','uploads/'.$reservation['id'].'/blob',$blob,['Authorization: Bearer '.$reservation['upload_token'],'Content-Type: application/octet-stream']);return $reservation['id'];
 }
 $upload=uploadFixture($inboxRow,'ordinary incoming CI content','incoming.txt');
-work();$receipt=$transfers->receipt($upload);check($receipt!==null&&$receipt['state']==='done','Upload was not imported');
+work();$receipt=$transfers->receipt($upload);check($receipt!==null&&$receipt['state']==='done','Upload was not imported: '.json_encode($receipt).' destination_count='.count($destination->getDirectoryListing()));
 $imported=$destination->get($receipt['name']);check($imported->getContent()==='ordinary incoming CI content','Imported bytes differ');
 $count=count($destination->getDirectoryListing());work();check(count($destination->getDirectoryListing())===$count,'Retry duplicated an import');
 uploadFixture($inboxRow,'reject-this-ci-file','blocked.txt');work();check(count($destination->getDirectoryListing())===$count,'Rejected upload was imported');
