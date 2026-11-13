@@ -50,5 +50,5 @@ form.addEventListener('submit',async event=>{
 });
 $('code').addEventListener('input',()=>{const upload=$('code').value.trim().startsWith('U.');$('upload-fields').hidden=!upload;$('submit').textContent=upload?'Encrypt and upload':'Decrypt and download';});
 $('code').dispatchEvent(new Event('input'));
-async function recordView(){try{await ready();const code=parse();if(code.kind==='D')await fetch(`./api/v1/downloads/${code.id}/view`,{method:'POST',headers:{Authorization:'Bearer '+code.token},body:'',credentials:'omit',referrerPolicy:'no-referrer'});}catch{}}
+async function recordView(){try{const sodium=await ready(),code=parse();if(code.kind==='D')await fetch(`./api/v1/downloads/${code.id}/view`,{method:'POST',headers:{Authorization:'Bearer '+code.token},body:'',credentials:'omit',referrerPolicy:'no-referrer'});else await fetch(`./api/v1/inboxes/${code.id}/view`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({public_key:sodium.to_base64(code.public,sodium.base64_variants.ORIGINAL)}),credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer'});}catch{}}
 $('code').addEventListener('change',recordView);if(location.hash)consumeHash();else recordView();

@@ -296,6 +296,18 @@ class Store:
             self.event('page_accessed',ident,db=db)
             return {'available':row['uses']<row['max_uses'],'expires':row['expires'],'requires_password':bool(row['password'])}
 
+    def view_inbox(self,ident,public_key):
+        self.valid_id(ident)
+        if not isinstance(public_key,str) or len(public_key)>64:raise Rejected(400,'Invalid inbox code')
+        try:key=public_key.encode('ascii')
+        except UnicodeError:raise Rejected(400,'Invalid inbox code')
+        with self.tx() as db:
+            row=db.execute('SELECT * FROM inboxes WHERE id=?',(ident,)).fetchone()
+            if not row or row['revoked'] or row['expires']<=self.now():raise Rejected()
+            if not hmac.compare_digest(key,row['public_key'].encode('ascii')):raise Rejected(audit_kind='wrong_code')
+            self.event('page_accessed',ident,db=db)
+            return {'available':True,'expires':row['expires'],'requires_password':True}
+
     def write(self, kind, ident, stream, length, token=None):
         self.valid_id(ident)
         table = "downloads" if kind == "download" else "uploads"

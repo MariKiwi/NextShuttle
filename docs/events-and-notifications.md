@@ -44,7 +44,7 @@ explicitly rather than blocking the entire delivery queue.
 
 Generic page visits and unknown codes cannot identify an owner, so admins alone
 receive those alerts. Wrong codes for known transfers also alert the mapped
-owner. Fragment-based secrets are invisible to HTTP; authenticated download view and inbox reservation endpoints provide contextual access events, never raw fragments in logs.
+owner. Fragment-based secrets are invisible to HTTP; authenticated download views, upload-link public-key-bound views and inbox reservation endpoints provide contextual access events, never raw fragments in logs.
 
 Every event queues an individual notification; no sampling/aggregation has been
 assumed. High traffic can create a backlog. Each cron execution collects at most

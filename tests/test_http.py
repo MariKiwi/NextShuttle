@@ -64,6 +64,21 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("private", "GET", "/api/v1/transfers", headers={
             "Authorization": "Bearer " + self.token, "Origin": "https://shuttle.helios.lan"})[0], 403)
 
+    def test_inbox_page_view_records_owner_context_without_reserving_an_upload(self):
+        import base64
+        key=base64.b64encode(b'k'*32).decode()
+        inbox=self.store.create_inbox({'password':'a long inbox password','ttl':60,'public_key':key,'max_files':2,'max_bytes':512})
+        path='/nextshuttle/api/v1/inboxes/'+inbox['id']+'/view'
+        headers={'Content-Type':'application/json'}
+        code,body,_=self.request('public','POST',path,json.dumps({'public_key':key}),headers)
+        self.assertEqual(code,200);self.assertTrue(json.loads(body)['requires_password'])
+        event=self.store.events()['events'][-1]
+        self.assertEqual((event['kind'],event['object_id']),('page_accessed',inbox['id']))
+        self.assertEqual(self.store.list()['inboxes'][0]['used_files'],0)
+        self.assertEqual(self.request('public','POST',path,json.dumps({'public_key':base64.b64encode(b'x'*32).decode()}),headers)[0],404)
+        self.store.revoke('inbox',inbox['id'])
+        self.assertEqual(self.request('public','POST',path,json.dumps({'public_key':key}),headers)[0],404)
+
     def test_body_and_type_limits(self):
         path = "/api/v1/downloads"
         auth = {"Authorization": "Bearer " + self.token}

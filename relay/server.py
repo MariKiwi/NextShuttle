@@ -257,6 +257,8 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
                 if method == "GET" and match:
                     return self.send_blob("upload", match[1])
             else:
+                match=re.fullmatch(r'inboxes/([a-f0-9]{32})/view',path)
+                if method=='POST' and match:return self.respond(store.view_inbox(match[1],self.body().get('public_key')))
                 match=re.fullmatch(r'downloads/([a-f0-9]{32})/view',path)
                 if method=='POST' and match:
                     self.content_length(0);return self.respond(store.view_download(match[1],self.token()))
