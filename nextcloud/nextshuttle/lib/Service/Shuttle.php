@@ -214,7 +214,7 @@ class Shuttle {
             $name='shuttle-'.$id.'-'.mb_strcut($meta['name'],0,190,'UTF-8');
             $plan=$this->transfers->plan($id,$inbox['id'],$name,$receipt['sha256']);
             $phase='folder_lock';$folder=$this->node($inbox['owner_uid'],$inbox['node_id'],'inbox');
-            $folder->lock(ILockingProvider::LOCK_EXCLUSIVE);
+            $folder->lock(ILockingProvider::LOCK_SHARED);
             try {
             $phase='destination_check';if ($folder->nodeExists($plan['name'])) {
                 $file=$folder->get($plan['name']);
@@ -223,10 +223,19 @@ class Shuttle {
                 if ($actual!==$receipt['sha256']) { throw new \RuntimeException('Import conflict requires review'); }
             } else {
                 $phase='quota_check';if ($folder->getFreeSpace()>=0&&$folder->getFreeSpace()<$meta['size']) { throw new \RuntimeException('Nextcloud quota exhausted'); }
-                $phase='file_creation';$stream=fopen($plain,'rb'); try { $file=$folder->newFile($plan['name'],$stream); } finally { if (is_resource($stream)) { fclose($stream); } }
+                $phase='file_creation';$storage=$folder->getStorage();
+                $target=rtrim($folder->getInternalPath(),'/').'/'.$plan['name'];
+                // Exclusive creation prevents a user or another job from racing an overwrite.
+                // Storage backends that do not support this mode must fail closed.
+                $output=$storage->fopen($target,'xb');
+                if (!is_resource($output)) { throw new \RuntimeException('Exclusive import creation unavailable'); }
+                $stream=fopen($plain,'rb');
+                try { if (stream_copy_to_stream($stream,$output,$meta['size']+1)!==$meta['size']) { throw new \RuntimeException('Import write incomplete'); } }
+                finally { if (is_resource($stream)) { fclose($stream); }if (is_resource($output)) { fclose($output); } }
+                $storage->getUpdater()->update($target);$file=$folder->get($plan['name']);
             }
             $phase='receipt_commit';$this->transfers->imported($id,(int)$file->getId());
-            } finally { $folder->unlock(ILockingProvider::LOCK_EXCLUSIVE); }
+            } finally { $folder->unlock(ILockingProvider::LOCK_SHARED); }
             $this->report('upload_imported',$id,$inbox['id']);
             $this->transfers->imported($id,(int)$file->getId(),'done');$this->relay->revoke('uploads',$id);
         } catch (ScanRejected $e) {
