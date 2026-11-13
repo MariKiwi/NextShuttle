@@ -8,6 +8,24 @@ use OCP\IUserManager;
 
 class Events {
     public function __construct(private IDBConnection $db, private IGroupManager $groups, private IUserManager $users) {}
+    public function queueReport(string $kind,?string $object=null,?string $parent=null): void {
+        if (!isset(EventCatalog::LABELS[$kind])) { throw new \InvalidArgumentException('Invalid audit report'); }
+        foreach ([$object,$parent] as $id) { if ($id!==null) { Relay::id($id); } }
+        $q=$this->db->getQueryBuilder();$q->select($q->func()->count('*'))->from('ns_reports');
+        $r=$q->executeQuery();$count=(int)$r->fetchOne();$r->closeCursor();
+        if ($count>=10000) { throw new \RuntimeException('Audit outbox is full'); }
+        $q=$this->db->getQueryBuilder();$q->insert('ns_reports')->values([
+            'id'=>$q->createNamedParameter(bin2hex(random_bytes(16))),'kind'=>$q->createNamedParameter($kind),
+            'object_id'=>$q->createNamedParameter($object),'parent_id'=>$q->createNamedParameter($parent),'created'=>$q->createNamedParameter(time())])->executeStatement();
+    }
+    public function flushReports(Relay $relay): void {
+        $q=$this->db->getQueryBuilder();$q->select('*')->from('ns_reports')->orderBy('created','ASC')->setMaxResults(10);
+        $r=$q->executeQuery();$rows=$r->fetchAll();$r->closeCursor();
+        foreach ($rows as $row) {
+            $relay->call('events/report',['event_id'=>$row['id'],'kind'=>$row['kind'],'object_id'=>$row['object_id'],'parent_id'=>$row['parent_id'],'occurred'=>(int)$row['created']]);
+            $q=$this->db->getQueryBuilder();$q->delete('ns_reports')->where($q->expr()->eq('id',$q->createNamedParameter($row['id'])))->executeStatement();
+        }
+    }
     private function owner(?string $id): ?string {
         if ($id === null) { return null; }
         $q = $this->db->getQueryBuilder();

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>NextShuttle</title><link rel="stylesheet" href="./assets/public.css"><script defer src="./assets/public.js"></script></head>
+<body><main class="shell"><div class="brand" aria-hidden="true">⇄</div><p class="eyebrow">A private way to send</p><h1>NextShuttle</h1><p class="intro">Share a file. Keep control.</p>
+<form id="transfer-form"><label for="code">Transfer code</label><textarea id="code" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste your download or upload code" required></textarea>
+<label for="password">Password <span class="hint">(uploads or password-protected downloads)</span></label><input id="password" type="password" autocomplete="off" minlength="16" maxlength="256">
+<div id="upload-fields" hidden><label for="file">File</label><input id="file" type="file"><p class="hint">Up to 32 MiB. Inbox limits and safety policies also apply.</p></div>
+<button id="submit" type="submit">Decrypt and download</button></form>
+<p id="status" role="status" aria-live="polite">Files are encrypted before upload and decrypted on your device.</p><div id="result"></div>
+<footer>Upload acceptance is subject to private content validation and malware scanning.</footer></main></body></html>

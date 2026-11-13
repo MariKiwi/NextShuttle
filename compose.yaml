@@ -12,7 +12,7 @@ services:
       NEXTSHUTTLE_DATA: /data
       NEXTSHUTTLE_SERVICE_TOKEN_FILE: /run/secrets/service_token
       NEXTSHUTTLE_CAPACITY: "1073741824"
-      NEXTSHUTTLE_MAX_BLOB: "33554432"
+      NEXTSHUTTLE_MAX_BLOB: "35651584"
     volumes: ["shuttle-data:/data"]
     networks: [public-backend]
     restart: unless-stopped
@@ -31,7 +31,7 @@ services:
     ports: ["127.0.0.1:9081:8081"]
     environment: *environment
     volumes: ["shuttle-data:/data"]
-    secrets: [service_token]
+    secrets: [service_token, admin_password]
     networks: [private-backend]
     restart: unless-stopped
     read_only: true
@@ -42,11 +42,68 @@ services:
     cpus: 1
     ulimits:
       nofile: {soft: 256, hard: 256}
+  shuttle-ingestion:
+    build: {context: ., dockerfile: Dockerfile.ingestion}
+    image: nextshuttle-ingestion:development
+    ports: ["127.0.0.1:9082:8082"]
+    secrets: [scanner_token]
+    volumes: ["clam-socket:/run/nextshuttle", "lmd-sigs:/usr/local/maldetect/sigs:ro"]
+    tmpfs:
+      - /quarantine:size=256m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev
+      - /tmp:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev
+      - /usr/local/maldetect/pub/shuttle:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev
+    networks: [scanner-backend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1
+    restart: unless-stopped
+  shuttle-clamd:
+    image: nextshuttle-ingestion:development
+    build: {context: ., dockerfile: Dockerfile.ingestion}
+    command: ["clamd", "--config-file=/etc/nextshuttle/clamd.conf", "--foreground=true"]
+    volumes: ["clam-socket:/run/nextshuttle", "clam-definitions:/var/lib/clamav:ro"]
+    tmpfs: ["/tmp:size=256m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev"]
+    networks: [scanner-backend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 3g
+    pids_limit: 64
+    cpus: 1
+    restart: unless-stopped
+  shuttle-signatures:
+    image: nextshuttle-ingestion:development
+    build: {context: ., dockerfile: Dockerfile.ingestion}
+    command: ["python3", "-m", "ingestion.update"]
+    volumes: ["clam-definitions:/var/lib/clamav", "clam-socket:/run/nextshuttle", "lmd-sigs:/usr/local/maldetect/sigs", "lmd-clean:/usr/local/maldetect/clean"]
+    tmpfs: ["/tmp:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev", "/usr/local/maldetect/pub/shuttle:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev"]
+    read_only: true
+    networks: [signature-updates]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 64
+    cpus: 0.5
+    restart: unless-stopped
 volumes:
   shuttle-data:
+  clam-socket:
+  clam-definitions:
+  lmd-sigs:
+  lmd-clean:
 networks:
   public-backend:
   private-backend:
+  scanner-backend:
+    internal: true
+  signature-updates:
 secrets:
   service_token:
     file: ./secrets/service_token
+  admin_password:
+    file: ./secrets/admin_password
+  scanner_token:
+    file: ./secrets/scanner_token

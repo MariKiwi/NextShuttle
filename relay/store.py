@@ -28,13 +28,14 @@ def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def password_hash(password, salt):
+def password_hash(password, salt, *, legacy=False):
     if not isinstance(password, str) or not 16 <= len(password) <= 256:
         raise Rejected(400, "Password must contain 16 to 256 characters")
     if not HASH_SLOTS.acquire(blocking=False):
         raise Rejected(429, "Password verification busy")
     try:
-        return hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1).hex()
+        raw=hashlib.scrypt(password.encode(),salt=salt,n=16384 if legacy else 32768,r=8,p=1 if legacy else 3,maxmem=64*1024**2).hex()
+        return raw if legacy else 'scrypt:32768:8:3:'+raw
     finally:
         HASH_SLOTS.release()
 
@@ -69,6 +70,9 @@ class Store:
             ''')
             from relay import audit
             audit.initialize(db)
+        with self.tx() as db:
+            if 'password' not in {row[1] for row in db.execute('PRAGMA table_info(downloads)')}:
+                db.execute("ALTER TABLE downloads ADD COLUMN password TEXT NOT NULL DEFAULT ''")
 
     def event(self, kind, ident=None, parent=None, severity="info", size=None, db=None):
         from relay.audit import append
@@ -86,6 +90,52 @@ class Store:
         from relay.audit import acknowledge
         with self.tx() as db:
             return acknowledge(db, through)
+
+    def reset_download(self, ident):
+        self.valid_id(ident)
+        with self.tx() as db:
+            row=db.execute('SELECT * FROM downloads WHERE id=?',(ident,)).fetchone()
+            if not row or row['expires']<=self.now() or row['state']!='failed' or row['uses']:
+                raise Rejected(409,'Download is not retryable')
+            self.blob(ident).unlink(missing_ok=True)
+            db.execute("UPDATE downloads SET state='pending' WHERE id=?",(ident,))
+            self.event('download_retried',ident,db=db)
+
+    def prune_audit(self, before):
+        self.integer(before,0,self.now())
+        with self.tx() as db:
+            ack=db.execute('SELECT acknowledged FROM audit_state WHERE id=1').fetchone()[0]
+            count=db.execute('DELETE FROM audit_events WHERE sequence<=? AND occurred<?',(ack,before)).rowcount
+            db.execute("DELETE FROM audit_meta WHERE name LIKE 'report:%' AND NOT EXISTS (SELECT 1 FROM audit_events WHERE sequence=CAST(json_extract(audit_meta.value,'$.sequence') AS INTEGER))")
+            if count:self.event('audit_pruned',db=db)
+        return {'removed':count}
+
+    def export_events(self,after):
+        rows=[]
+        for _ in range(10):
+            batch=self.events(after,100);rows.extend(batch['events']);after=batch['next']
+            if after>=batch['high_water']:break
+        return {**batch,'events':rows}
+
+    def report_event(self,data):
+        import json
+        event_id=data.get('event_id')
+        if event_id is not None:self.valid_id(event_id)
+        occurred=data.get('occurred')
+        if occurred is not None:self.integer(occurred,0,self.now()+60)
+        payload=[data['kind'],data.get('object_id'),data.get('parent_id'),occurred]
+        with self.tx() as db:
+            if event_id:
+                old=db.execute('SELECT value FROM audit_meta WHERE name=?',('report:'+event_id,)).fetchone()
+                if old:
+                    saved=json.loads(old[0])
+                    if saved['payload']!=payload:raise Rejected(409,'Audit report ID conflict')
+                    return saved['sequence']
+            severity='critical' if data['kind']=='malware_detected' else 'warning' if data['kind'] in ('content_rejected','scan_unavailable','service_error') else 'info'
+            from relay.audit import append
+            sequence=append(db,self.now() if occurred is None else occurred,data['kind'],data.get('object_id'),data.get('parent_id'),severity)
+            if event_id:db.execute('INSERT INTO audit_meta VALUES (?,?)',('report:'+event_id,json.dumps({'payload':payload,'sequence':sequence})))
+            return sequence
 
     @contextmanager
     def tx(self):
@@ -105,7 +155,7 @@ class Store:
         return int(self.clock())
 
     def valid_id(self, value):
-        if not re.fullmatch(r"[a-f0-9]{32}", value):
+        if not isinstance(value,str) or not re.fullmatch(r"[a-f0-9]{32}", value):
             raise Rejected()
         return value
 
@@ -119,6 +169,11 @@ class Store:
 
     def ttl(self, value):
         return self.now() + self.integer(value, 60, self.max_ttl)
+
+    def expiry(self, data):
+        if 'expires' in data:
+            return self.integer(data['expires'], self.now()+1, self.now()+self.max_ttl)
+        return self.ttl(data.get('ttl'))
 
     def size(self, value):
         return self.integer(value, 1, self.max_blob)
@@ -149,13 +204,29 @@ class Store:
             raise Rejected(429, "Too many requests")
 
     def create_download(self, data):
-        size, expiry = self.size(data.get("bytes")), self.ttl(data.get("ttl"))
+        import json
+        size, expiry = self.size(data.get("bytes")), self.expiry(data)
         uses = self.integer(data.get("max_uses", 1), 1, 1000)
-        ident, token = secrets.token_hex(16), secrets.token_urlsafe(32)
+        ident, token = self.valid_id(data.get('id',secrets.token_hex(16))), data.get('access_token',secrets.token_urlsafe(32))
+        if not isinstance(token,str) or not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',token):
+            raise Rejected(400,'Invalid access credential')
+        protection=''
+        if data.get('password'):
+            salt=secrets.token_bytes(16)
+            protection=json.dumps({'salt':salt.hex(),'hash':password_hash(data['password'],salt)})
         with self.tx() as db:
+            old=db.execute('SELECT * FROM downloads WHERE id=?',(ident,)).fetchone()
+            if old:
+                if old['bytes']!=size or old['expires']!=expiry or old['max_uses']!=uses or not hmac.compare_digest(old['credential'],digest(token)):
+                    raise Rejected(409,'Transfer ID already used')
+                if bool(old['password'])!=bool(protection):raise Rejected(409,'Download protection changed')
+                if old['password']:
+                    saved=json.loads(old['password'])
+                    if not hmac.compare_digest(saved['hash'],password_hash(data.get('password'),bytes.fromhex(saved['salt']))):raise Rejected(409,'Download protection changed')
+                return {'id':ident,'access_token':token,'expires':expiry,'state':old['state']}
             self.available(db, size)
-            db.execute("INSERT INTO downloads VALUES (?, ?, ?, ?, ?, 0, 'pending', ?)",
-                       (ident, digest(token), size, expiry, uses, self.now()))
+            db.execute("INSERT INTO downloads(id,credential,bytes,expires,max_uses,uses,state,created,password) VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?)",
+                       (ident, digest(token), size, expiry, uses, self.now(),protection))
             self.event("download_created", ident, size=size, db=db)
         return {"id": ident, "access_token": token, "expires": expiry}
 
@@ -167,12 +238,17 @@ class Store:
                 raise ValueError()
         except (ValueError, TypeError):
             raise Rejected(400, "Expected a base64 sodium box public key")
-        expiry = self.ttl(data.get("ttl"))
+        expiry = self.expiry(data)
         size = self.integer(data.get("max_bytes"), 1, self.capacity)
         files = self.integer(data.get("max_files", 10), 1, 1000)
-        salt, ident = secrets.token_bytes(16), secrets.token_hex(16)
+        salt, ident = secrets.token_bytes(16), self.valid_id(data.get('id',secrets.token_hex(16)))
         hashed = password_hash(data.get("password"), salt)
         with self.tx() as db:
+            old=db.execute('SELECT * FROM inboxes WHERE id=?',(ident,)).fetchone()
+            if old:
+                if old['revoked'] or old['public_key']!=key or old['expires']!=expiry or old['max_bytes']!=size or old['max_files']!=files or not hmac.compare_digest(old['password'],password_hash(data.get('password'),old['salt'],legacy=not old['password'].startswith('scrypt:'))):
+                    raise Rejected(409,'Inbox ID already used')
+                return {'id':ident,'expires':expiry}
             self.available(db, 0)
             db.execute("INSERT INTO inboxes VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0)",
                        (ident, salt, hashed, key, expiry, size, files))
@@ -188,7 +264,7 @@ class Store:
         if not row or row["revoked"] or row["expires"] <= self.now():
             raise Rejected()
         try:
-            hashed = password_hash(password, row["salt"])
+            hashed = password_hash(password, row["salt"],legacy=not row['password'].startswith('scrypt:'))
         except Rejected:
             raise Rejected(audit_kind="wrong_code")
         if not hmac.compare_digest(hashed, row["password"]):
@@ -206,9 +282,19 @@ class Store:
             expiry = min(current["expires"], self.now()+900)
             db.execute("INSERT INTO uploads VALUES (?, ?, ?, ?, ?, 'pending', ?)",
                        (ident, inbox, digest(token), size, expiry, self.now()))
+            self.event('page_accessed',inbox,db=db)
             self.event("upload_reserved", ident, inbox, size=size, db=db)
         return {"id": ident, "upload_token": token, "public_key": row["public_key"],
                 "expires": expiry, "bytes": size}
+
+    def view_download(self,ident,token):
+        self.valid_id(ident)
+        with self.tx() as db:
+            row=db.execute('SELECT * FROM downloads WHERE id=?',(ident,)).fetchone()
+            if not row or row['state']!='ready' or row['expires']<=self.now():raise Rejected()
+            if not hmac.compare_digest(digest(token or ''),row['credential']):raise Rejected(audit_kind='wrong_code')
+            self.event('page_accessed',ident,db=db)
+            return {'available':row['uses']<row['max_uses'],'expires':row['expires'],'requires_password':bool(row['password'])}
 
     def write(self, kind, ident, stream, length, token=None):
         self.valid_id(ident)
@@ -257,7 +343,7 @@ class Store:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def fetch(self, kind, ident, token=None):
+    def fetch(self, kind, ident, token=None, password=None):
         self.valid_id(ident)
         table = "downloads" if kind == "download" else "uploads"
         with self.tx() as db:
@@ -269,6 +355,12 @@ class Store:
                     raise Rejected(audit_kind="wrong_code")
                 if row["uses"] >= row["max_uses"]:
                     raise Rejected()
+                if row['password']:
+                    import json
+                    saved=json.loads(row['password'])
+                    try:valid=hmac.compare_digest(saved['hash'],password_hash(password,bytes.fromhex(saved['salt'])))
+                    except Rejected:valid=False
+                    if not valid:raise Rejected(audit_kind='wrong_code')
             try:
                 handle = self.blob(ident).open("rb")
             except FileNotFoundError:
@@ -288,7 +380,7 @@ class Store:
         with self.tx() as db:
             if table == "inboxes":
                 db.execute("UPDATE inboxes SET revoked=1 WHERE id=?", (ident,))
-                db.execute("UPDATE uploads SET state='revoked' WHERE inbox=? AND state IN ('pending','writing')", (ident,))
+                db.execute("UPDATE uploads SET state='revoked' WHERE inbox=?", (ident,))
             else:
                 db.execute(f"UPDATE {table} SET state='revoked' WHERE id=?", (ident,))
             parent = None

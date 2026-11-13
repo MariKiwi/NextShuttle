@@ -24,6 +24,10 @@ class Configure extends Command {
         }
         $this->config->setAppValue('nextshuttle', 'relay_url', 'https://shuttle.helios.lan/');
         $this->config->setAppValue('nextshuttle', 'service_token', $this->crypto->encrypt($token));
+        $scannerQuestion=new Question('Private scanner token (hidden): '); $scannerQuestion->setHidden(true)->setHiddenFallback(false);
+        $scanner=$this->getHelper('question')->ask($input,$output,$scannerQuestion);
+        if (!is_string($scanner)||!preg_match('/^[A-Za-z0-9_-]{43,128}$/D',$scanner)) { $output->writeln('Invalid scanner token'); return Command::FAILURE; }
+        $this->config->setAppValue('nextshuttle','scanner_token',$this->crypto->encrypt($scanner));
         $output->writeln('Private event bridge configured. Certificate validation remains enabled.');
         return Command::SUCCESS;
     }

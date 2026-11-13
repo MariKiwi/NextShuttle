@@ -1,0 +1,19 @@
+{
+  "name": "nextshuttle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test tests/crypto.test.mjs"
+  },
+  "dependencies": {
+    "@nextcloud/auth": "2.6.0",
+    "@nextcloud/files": "4.1.1",
+    "@nextcloud/router": "3.2.0",
+    "@nextcloud/sharing": "0.4.0",
+    "libsodium-wrappers-sumo": "0.8.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

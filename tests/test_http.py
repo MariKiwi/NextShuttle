@@ -18,7 +18,7 @@ class HttpTests(unittest.TestCase):
         self.threads = []
         for mode in ("public", "private"):
             server = BoundedServer(("127.0.0.1", 0), handler(self.store, mode, self.token,
-                "https://helios-public.tail43e437.ts.net/nextshuttle/"))
+                "https://helios-public.tail43e437.ts.net/nextshuttle/",'a'*64 if mode=='private' else None))
             thread = threading.Thread(target=server.serve_forever)
             thread.start()
             self.servers[mode] = server
@@ -97,6 +97,19 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("private", "POST", "/api/v1/events/ack", b'{"through":1}', auth)[0], 200)
         self.assertEqual(self.store.events()["acknowledged"], 1)
         self.assertEqual(self.request("public", "POST", "/nextshuttle/api/v1/events/read", b'{"after":0}', auth)[0], 404)
+
+    def test_private_admin_uses_separate_authentication_and_csrf(self):
+        import base64,re
+        self.assertEqual(self.request('private','GET','/')[0],401)
+        headers={'Authorization':'Basic '+base64.b64encode(('admin:'+'a'*64).encode()).decode()}
+        status,body,_=self.request('private','GET','/',headers=headers);self.assertEqual(status,200)
+        csrf=re.search(rb'name="csrf" content="([a-f0-9]+)"',body)[1].decode()
+        self.assertNotIn(self.token.encode(),body)
+        headers.update({'Content-Type':'application/json','Origin':'https://shuttle.helios.lan'})
+        self.assertEqual(self.request('private','POST','/admin/api/cleanup',b'{}',headers)[0],403)
+        headers['X-NextShuttle-CSRF']=csrf
+        self.assertEqual(self.request('private','POST','/admin/api/cleanup',b'{}',headers)[0],200)
+        self.assertEqual(self.request('public','GET','/admin/api/state',headers=headers)[0],404)
 
 
 if __name__ == "__main__":

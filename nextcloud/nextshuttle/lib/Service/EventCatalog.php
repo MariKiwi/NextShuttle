@@ -27,6 +27,13 @@ class EventCatalog {
         'scan_unavailable' => 'Upload scanning is unavailable; import remains blocked',
         'upload_imported' => 'A cleared upload was imported',
         'scan_clean' => 'Both scanners cleared an upload',
+        'download_retried'=>'An interrupted download preparation was retried',
+        'admin_page_accessed'=>'The private shuttle administration page was accessed',
+        'audit_pruned'=>'Archived audit history was pruned',
+        'policy_changed'=>'NextShuttle sharing policies were changed',
+        'credentials_rotated'=>'NextShuttle service credentials were changed',
+        'cleanup_requested'=>'Private shuttle cleanup was requested',
+        'scanner_recovered'=>'Both private scanners are available again',
     ];
     public static function validate(array $event): void {
         if (!is_int($event['sequence'] ?? null) || $event['sequence'] < 1

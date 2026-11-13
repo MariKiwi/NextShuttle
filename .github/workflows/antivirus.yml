@@ -1,0 +1,21 @@
+name: Real antivirus staging
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  real-engines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p secrets
+          python3 - <<'PY'
+          from pathlib import Path
+          for name,char in [('service_token','r'),('scanner_token','s'),('admin_password','a')]:
+              p=Path('secrets')/name;p.write_text(char*64);p.chmod(0o444)
+          PY
+      - run: docker compose build shuttle-ingestion
+      - run: docker compose up -d shuttle-signatures shuttle-clamd shuttle-ingestion
+      - run: python3 tests/live_antivirus.py
+      - if: failure()
+        run: docker compose logs --tail=100 shuttle-signatures shuttle-clamd shuttle-ingestion

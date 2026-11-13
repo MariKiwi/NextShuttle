@@ -1,0 +1,16 @@
+name: Nextcloud integration
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  nextcloud-35:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: bash tools/ci-integration.sh
+      - if: failure()
+        run: docker logs nextcloud-test; docker logs relay-private; docker logs private-proxy

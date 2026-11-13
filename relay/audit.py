@@ -12,8 +12,10 @@ KINDS = frozenset({
     "page_accessed", "access_denied", "wrong_code", "request_rejected", "rate_limited",
     "service_error", "malware_detected", "content_rejected", "scan_unavailable",
     "upload_imported", "scan_clean",
+    "download_retried", "admin_page_accessed", "audit_pruned", "policy_changed", "credentials_rotated", "cleanup_requested",
+    "scanner_recovered",
 })
-SCANNER_KINDS = frozenset({"malware_detected", "content_rejected", "scan_unavailable", "upload_imported", "scan_clean"})
+SCANNER_KINDS = frozenset({"malware_detected", "content_rejected", "scan_unavailable", "upload_imported", "scan_clean", "policy_changed", "credentials_rotated", "service_error", "page_accessed", "scanner_recovered"})
 
 
 def initialize(db):

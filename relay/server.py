@@ -3,6 +3,8 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import hmac
+import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -44,7 +46,7 @@ class BoundedServer(HTTPServer):
         self.pool.shutdown(wait=True)
 
 
-def handler(store, mode, service_token, public_url):
+def handler(store, mode, service_token, public_url, admin_password=None):
     origin = urlsplit(public_url)
     public_origin = f"{origin.scheme}://{origin.netloc}"
     prefix = origin.path.rstrip("/") + "/api/v1/" if mode == "public" else "/api/v1/"
@@ -70,7 +72,7 @@ def handler(store, mode, service_token, public_url):
             except (Rejected, BrokenPipeError, ConnectionResetError, TimeoutError):
                 self.close_connection = True
 
-        def headers_out(self, status, length, content_type="application/json"):
+        def headers_out(self, status, length, content_type="application/json",web=False):
             self.response_started = True
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -78,7 +80,7 @@ def handler(store, mode, service_token, public_url):
             self.send_header("Cache-Control", "no-store")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" if web else "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
             self.send_header("Connection", "close")
             self.end_headers()
 
@@ -87,10 +89,58 @@ def handler(store, mode, service_token, public_url):
             self.headers_out(status, len(body))
             self.wfile.write(body)
 
+        def static(self, name, csrf=None):
+            allowed={'index.html':'text/html; charset=utf-8','public.js':'text/javascript','public.css':'text/css','admin.html':'text/html; charset=utf-8','admin.js':'text/javascript'}
+            if name not in allowed:raise Rejected()
+            path=Path(__file__).parent/'static'/name
+            if not path.is_file():raise Rejected(503,'Frontend build unavailable')
+            raw=path.read_bytes()
+            if csrf is not None:raw=raw.replace(b'__CSRF__',html.escape(csrf).encode())
+            self.headers_out(200,len(raw),allowed[name],web=True);self.wfile.write(raw)
+
+        def csrf(self, bucket=None):
+            bucket=store.now()//3600 if bucket is None else bucket
+            return hmac.new((service_token+admin_password).encode(),str(bucket).encode(),hashlib.sha256).hexdigest()
+
+        def admin(self):
+            import base64
+            store.rate(self.client_address[0],limit=120,scope='admin')
+            value=self.headers.get('Authorization','')
+            try: valid=hmac.compare_digest(base64.b64decode(value[6:],validate=True).decode(),'admin:'+admin_password) if value.startswith('Basic ') else False
+            except (ValueError,UnicodeError,TypeError):valid=False
+            if not valid:
+                try:store.event('access_denied',severity='warning')
+                except Rejected:pass # Authentication challenge must remain available for recovery.
+                self.send_response(401);self.send_header('WWW-Authenticate','Basic realm="NextShuttle private administration", charset="UTF-8"');self.send_header('Content-Length','0');self.end_headers();return
+            path=urlsplit(self.path).path
+            if self.command=='GET':
+                if path=='/':
+                    try:store.event('admin_page_accessed')
+                    except Rejected:pass # Read-only recovery UI must remain reachable if the audit capacity is exhausted.
+                    return self.static('admin.html',self.csrf())
+                if path=='/admin/assets/admin.js':return self.static('admin.js')
+                if path=='/admin/assets/public.css':return self.static('public.css')
+                if path=='/admin/api/state':
+                    with store.tx() as db:high=db.execute('SELECT coalesce(max(sequence),0) FROM audit_events').fetchone()[0]
+                    return self.respond({'transfers':store.list(),'audit':store.events(max(0,high-100)),'capacity':store.capacity,'max_blob':store.max_blob})
+            if self.command!='POST' or self.headers.get('Origin')!='https://shuttle.helios.lan':raise Rejected(403,'Private origin required')
+            token=self.headers.get('X-NextShuttle-CSRF','')
+            if not any(hmac.compare_digest(token,self.csrf(bucket)) for bucket in (store.now()//3600,store.now()//3600-1)):raise Rejected(403,'Reload the administration page')
+            data=self.body()
+            if path=='/admin/api/revoke':
+                if data.get('kind') not in ('download','inbox','upload'):raise Rejected(400,'Invalid transfer type')
+                store.revoke(data['kind'],data.get('id',''));store.cleanup();return self.respond({'ok':True})
+            if path=='/admin/api/password':store.rotate_password(data.get('id',''),data.get('password'));return self.respond({'ok':True})
+            if path=='/admin/api/cleanup':store.event('cleanup_requested');return self.respond(store.cleanup())
+            if path=='/admin/api/export':return self.respond(store.export_events(data.get('after',0)))
+            if path=='/admin/api/prune':return self.respond(store.prune_audit(data.get('before')))
+            raise Rejected()
+
         def token(self):
             value = self.headers.get("Authorization", "")
             if not value.startswith("Bearer ") or len(value) > 512:
                 return ""
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',value[7:]):return ''
             return value[7:]
 
         def content_length(self, maximum):
@@ -121,7 +171,7 @@ def handler(store, mode, service_token, public_url):
 
         def dispatch(self):
             # No proxy-supplied source address or host is used for authorization.
-            store.rate(self.client_address[0], scope=mode)
+            if mode=='public':store.rate(self.client_address[0],scope=mode)
             parsed = urlsplit(self.path)
             if parsed.query or parsed.fragment or not parsed.path.startswith(prefix):
                 raise Rejected()
@@ -130,7 +180,9 @@ def handler(store, mode, service_token, public_url):
                 raise Rejected()
             if mode == "private":
                 if not hmac.compare_digest(self.token(), service_token):
+                    store.rate(self.client_address[0],scope='private-auth')
                     raise Rejected(401, "Authentication required")
+                store.rate(self.client_address[0],limit=600,scope='private')
                 # This API uses bearer headers, never browser ambient cookies.
                 if self.headers.get("Origin"):
                     raise Rejected(403, "Browser management requests are disabled")
@@ -146,6 +198,9 @@ def handler(store, mode, service_token, public_url):
                     return self.respond(store.create_download(self.body()), 201)
                 if method == "POST" and path == "inboxes":
                     return self.respond(store.create_inbox(self.body()), 201)
+                match=re.fullmatch(r'downloads/([a-f0-9]{32})/reset',path)
+                if method=='POST' and match:
+                    self.body();store.reset_download(match[1]);return self.respond({'ok':True})
                 if method == "GET" and path == "transfers":
                     return self.respond(store.list())
                 if method == "GET" and path == "uploads":
@@ -160,8 +215,7 @@ def handler(store, mode, service_token, public_url):
                     data = self.body()
                     if data.get("kind") not in SCANNER_KINDS:
                         raise Rejected(400, "Unsupported ingestion event")
-                    sequence = store.event(data["kind"], data.get("object_id"), data.get("parent_id"),
-                        "critical" if data["kind"] == "malware_detected" else "warning" if data["kind"] in ("content_rejected", "scan_unavailable") else "info")
+                    sequence = store.report_event(data)
                     return self.respond({"sequence": sequence}, 201)
                 if method == "POST" and path == "cleanup":
                     self.body()
@@ -184,11 +238,14 @@ def handler(store, mode, service_token, public_url):
                 if method == "GET" and match:
                     return self.send_blob("upload", match[1])
             else:
+                match=re.fullmatch(r'downloads/([a-f0-9]{32})/view',path)
+                if method=='POST' and match:
+                    self.content_length(0);return self.respond(store.view_download(match[1],self.token()))
                 match = re.fullmatch(r"downloads/([a-f0-9]{32})/fetch", path)
                 if method == "POST" and match:
-                    if self.content_length(0) != 0:
-                        raise Rejected(400)
-                    return self.send_blob("download", match[1])
+                    length=self.content_length(8192)
+                    password=self.body().get('password') if length else None
+                    return self.send_blob("download", match[1],password)
                 match = re.fullmatch(r"inboxes/([a-f0-9]{32})/uploads", path)
                 if method == "POST" and match:
                     data = self.body()
@@ -199,8 +256,8 @@ def handler(store, mode, service_token, public_url):
                     return self.respond({"ok": True})
             raise Rejected()
 
-        def send_blob(self, kind, ident):
-            handle, length = store.fetch(kind, ident, self.token())
+        def send_blob(self, kind, ident,password=None):
+            handle, length = store.fetch(kind, ident, self.token(),password)
             with handle:
                 self.headers_out(200, length, "application/octet-stream")
                 try:
@@ -230,10 +287,18 @@ def handler(store, mode, service_token, public_url):
             self.response_started = False
             try:
                 parsed = urlsplit(self.path)
+                if mode=='private' and admin_password and (parsed.path=='/' or parsed.path.startswith('/admin/')):
+                    return self.admin()
+                if mode=='public' and self.command=='GET' and parsed.path.startswith(origin.path.rstrip('/')+'/assets/'):
+                    asset=parsed.path.rsplit('/',1)[-1]
+                    if asset not in ('public.js','public.css'):raise Rejected()
+                    return self.static(asset)
                 if mode == "public" and self.command == "GET" and parsed.path in (origin.path, origin.path.rstrip("/")):
                     store.rate(self.client_address[0], scope=mode)
                     store.event("page_accessed")
-                    return self.respond({"service": "NextShuttle", "status": "development", "transfer_ui_ready": False})
+                    if parsed.path!=origin.path:
+                        self.send_response(308);self.send_header('Location',origin.path);self.send_header('Content-Length','0');self.end_headers();return
+                    return self.static('index.html')
                 self.dispatch()
             except Rejected as error:
                 try:
@@ -265,11 +330,14 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
     token = ""
+    admin_password=None
     if args.mode == "private":
         token_path = os.environ.get("NEXTSHUTTLE_SERVICE_TOKEN_FILE", "/run/secrets/service_token")
         token = Path(token_path).read_text().strip()
         if len(token) < 43 or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
             raise SystemExit("Service token must be at least 43 random URL-safe characters")
+        admin_password=Path(os.environ.get('NEXTSHUTTLE_ADMIN_PASSWORD_FILE','/run/secrets/admin_password')).read_text().strip()
+        if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',admin_password):raise SystemExit('Invalid private administrator password')
     store = Store(os.environ.get("NEXTSHUTTLE_DATA", "/data"),
                   capacity=int(os.environ.get("NEXTSHUTTLE_CAPACITY", 1024**3)),
                   max_blob=int(os.environ.get("NEXTSHUTTLE_MAX_BLOB", 32*1024**2)))
@@ -277,7 +345,7 @@ def main():
     parsed = urlsplit(public_url)
     if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
         raise SystemExit("Public URL must be an HTTPS origin with an optional base path")
-    server = BoundedServer((args.bind, args.port), handler(store, args.mode, token, public_url))
+    server = BoundedServer((args.bind, args.port), handler(store, args.mode, token, public_url,admin_password))
     stopped = threading.Event()
 
     def stop(*_):

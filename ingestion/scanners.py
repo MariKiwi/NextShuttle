@@ -136,6 +136,8 @@ class ClamAV:
                 connection.sendall(b"\0\0\0\0")
                 result = self.response(connection)
             if result.endswith(" FOUND"):
+                if any(marker in result for marker in ('Heuristics.Limits.Exceeded','Heuristics.Encrypted','Heuristics.OLE2.ContainsMacros','Broken.Executable')):
+                    raise Blocked('unsafe_or_uninspectable_content',self.name)
                 raise Blocked("malware_detected", self.name)
             if result != "stream: OK":
                 raise Blocked("scan_incomplete", self.name)
@@ -164,7 +166,7 @@ class LMD:
                 if not metadata.st_size or not -3600 <= self.clock()-metadata.st_mtime <= self.max_age:
                     raise Blocked("stale_or_missing_signatures", self.name)
             signature_version = (self.signatures / "maldet.sigs.ver").read_text().strip()
-            options = "scan_clamscan=0,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
+            options = "scan_user_access=1,scan_clamscan=0,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
             code, output = self.runner([self.executable, "--config-option", options, "--scan-all", str(path)], self.timeout)
             if code == 2:
                 raise Blocked("malware_detected", self.name)
@@ -214,30 +216,18 @@ class ScanGate:
         if not path.is_relative_to(self.quarantine):
             raise Blocked("unsafe_path")
         expected, size = fingerprint(path)
-        # Deliberately narrow initial test profile. Expand types only with
-        # isolated validators and acceptance tests, never an extension denylist.
-        filename = original_name if original_name is not None else original.name
-        if (not isinstance(filename, str) or len(filename.encode()) > 240
-                or any(c in filename for c in ("/", "\\", ":"))
-                or any(ord(c) < 32 or ord(c) == 127 for c in filename)
-                or not filename.lower().endswith(".txt") or filename.startswith(".")):
-            raise Blocked("content_policy")
-        decoder = codecs.getincrementaldecoder("utf-8")("strict")
-        try:
-            with open(path, "rb") as file:
-                while chunk := file.read(65536):
-                    text = decoder.decode(chunk)
-                    if any(ord(c) < 32 and c not in "\t\r\n" for c in text):
-                        raise Blocked("content_policy")
-                decoder.decode(b"", final=True)
-        except UnicodeError:
-            raise Blocked("invalid_text")
-        verdicts = []
-        for engine in self.engines:
-            verdict = engine.scan(path, expected)
-            if verdict.engine != engine.name or verdict.sha256 != expected or not verdict.version or not verdict.signatures:
-                raise Blocked("invalid_verdict", engine.name)
-            if fingerprint(path) != (expected, size):
-                raise Blocked("content_changed", engine.name)
-            verdicts.append(verdict)
-        return Approval(expected, size, tuple(verdicts))
+        from ingestion.content import Content
+        inputs=Content(self.quarantine).inspect(path,original_name if original_name is not None else original.name)
+        verdicts=[]
+        deadline=time.monotonic()+110
+        for index,(item,name) in enumerate(inputs):
+            item_hash,item_size=fingerprint(item)
+            for engine in self.engines:
+                if time.monotonic()>deadline:raise Blocked('scan_budget_exceeded')
+                verdict=engine.scan(item,item_hash)
+                if verdict.engine!=engine.name or verdict.sha256!=item_hash or not verdict.version or not verdict.signatures:
+                    raise Blocked('invalid_verdict',engine.name)
+                if fingerprint(item)!=(item_hash,item_size):raise Blocked('content_changed',engine.name)
+                if index==0:verdicts.append(verdict)
+        if fingerprint(path)!=(expected,size):raise Blocked('content_changed')
+        return Approval(expected,size,tuple(verdicts))

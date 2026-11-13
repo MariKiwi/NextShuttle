@@ -5,7 +5,7 @@
   <name>NextShuttle</name>
   <summary>Private file shuttle and security events</summary>
   <description>Development build: durable relay audit import and Nextcloud notifications. File transfer and scanning integration is not yet complete.</description>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <licence>agpl</licence>
   <author>NextShuttle contributors</author>
   <namespace>NextShuttle</namespace>
@@ -13,7 +13,7 @@
   <bugs>https://github.com/MariKiwi/NextShuttle/issues</bugs>
   <repository type="git">https://github.com/MariKiwi/NextShuttle.git</repository>
   <dependencies><nextcloud min-version="35" max-version="35"/></dependencies>
-  <background-jobs><job>OCA\NextShuttle\BackgroundJob\PollEvents</job></background-jobs>
+  <background-jobs><job>OCA\NextShuttle\BackgroundJob\PollEvents</job><job>OCA\NextShuttle\BackgroundJob\TransferJobs</job></background-jobs>
   <commands>
     <command>OCA\NextShuttle\Command\Configure</command>
     <command>OCA\NextShuttle\Command\Owner</command>

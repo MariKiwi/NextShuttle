@@ -8,3 +8,7 @@ secrets/
 *.key
 *.crt
 .pytest_cache/
+relay/static/public.js
+nextcloud/nextshuttle/js/
+*.tar.gz
+ci-state/

@@ -57,7 +57,7 @@ class AuditTests(unittest.TestCase):
 
     def test_relay_catalog_matches_nextcloud_notifier(self):
         source = (Path(__file__).parents[1] / "nextcloud/nextshuttle/lib/Service/EventCatalog.php").read_text()
-        labels = set(re.findall(r"'([a-z_]+)' => '", source))
+        labels = set(re.findall(r"'([a-z_]+)'\s*=>\s*'", source))
         self.assertEqual(KINDS, labels)
 
     def test_full_journal_blocks_state_changes_instead_of_dropping_events(self):
@@ -67,6 +67,20 @@ class AuditTests(unittest.TestCase):
             self.store.create_download({"bytes": 4, "ttl": 60})
         self.assertEqual(error.exception.status, 507)
         self.assertEqual(self.store.list()["downloads"], [])
+
+    def test_report_retries_are_idempotent_and_preserve_occurrence_time(self):
+        report={'event_id':'e'*32,'kind':'malware_detected','object_id':'a'*32,'occurred':100}
+        first=self.store.report_event(report)
+        self.assertEqual(first,self.store.report_event(report));self.assertEqual(len(self.store.events()['events']),1)
+        self.assertEqual(self.store.events()['events'][0]['occurred'],100)
+        with self.assertRaises(Rejected):self.store.report_event({**report,'kind':'scan_clean'})
+
+    def test_pruning_only_acknowledged_history_preserves_cursor(self):
+        self.store.report_event({'event_id':'e'*32,'kind':'scan_clean','occurred':100})
+        self.store.event('page_accessed')
+        self.store.acknowledge(1)
+        self.assertEqual(self.store.prune_audit(self.store.now())['removed'],1)
+        self.assertEqual([r['sequence'] for r in self.store.events(1)['events']],[2,3])
 
 
 if __name__ == "__main__":

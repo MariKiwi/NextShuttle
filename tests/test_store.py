@@ -168,6 +168,30 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(Rejected):
                 self.store.create_download({"bytes": size, "ttl": 60})
 
+    def test_explicit_ids_are_idempotent_without_reopening_a_download(self):
+        data={'id':'a'*32,'access_token':'t'*43,'bytes':4,'expires':self.time+60,'max_uses':1}
+        obj=self.store.create_download(data)
+        self.assertEqual(self.store.create_download(data)['state'],'pending')
+        self.store.write('download',obj['id'],BytesIO(b'data'),4)
+        self.assertEqual(self.store.create_download(data)['state'],'ready')
+        with self.assertRaises(Rejected):self.store.create_download({**data,'access_token':'x'*43})
+
+    def test_separate_download_password_and_view_without_consumption(self):
+        obj=self.store.create_download({'bytes':4,'ttl':60,'password':'separate strong password'})
+        self.store.write('download',obj['id'],BytesIO(b'data'),4)
+        view=self.store.view_download(obj['id'],obj['access_token'])
+        self.assertTrue(view['available'] and view['requires_password'])
+        for password in (None,'not the right password'):
+            with self.assertRaises(Rejected):self.store.fetch('download',obj['id'],obj['access_token'],password)
+        with self.store.fetch('download',obj['id'],obj['access_token'],'separate strong password')[0] as file:self.assertEqual(file.read(),b'data')
+        self.assertFalse(self.store.view_download(obj['id'],obj['access_token'])['available'])
+
+    def test_failed_download_can_be_reset_but_ready_download_cannot(self):
+        obj=self.store.create_download({'bytes':4,'ttl':60})
+        with self.assertRaises(Rejected):self.store.write('download',obj['id'],BytesIO(b'x'),4)
+        self.store.reset_download(obj['id']);self.store.write('download',obj['id'],BytesIO(b'data'),4)
+        with self.assertRaises(Rejected):self.store.reset_download(obj['id'])
+
     def test_public_rate_exhaustion_does_not_lock_out_private_service(self):
         for _ in range(30):
             self.store.rate("proxy", scope="public")

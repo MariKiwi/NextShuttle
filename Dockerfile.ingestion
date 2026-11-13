@@ -1,0 +1,25 @@
+FROM python:3.12-slim-bookworm
+ARG LMD_COMMIT=88dd694891ac52a11a6e6ac45546545d5b1c813f
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash ca-certificates curl git file gawk grep sed findutils coreutils procps util-linux \
+    clamav-daemon clamav-freshclam xxd && rm -rf /var/lib/apt/lists/* \
+    && git clone https://github.com/rfxn/linux-malware-detect.git /tmp/lmd \
+    && git -C /tmp/lmd checkout "$LMD_COMMIT" \
+    && mkdir /usr/local/maldetect && cp -a /tmp/lmd/files/. /usr/local/maldetect/ \
+    && rm -rf /tmp/lmd \
+    && groupadd --gid 10001 shuttle && useradd --uid 10001 --gid shuttle --no-create-home shuttle \
+    && sed -i 's/^scan_user_access=.*/scan_user_access="1"/; s/^scan_clamscan=.*/scan_clamscan="0"/; s/^autoupdate_version=.*/autoupdate_version="0"/' /usr/local/maldetect/conf.maldet \
+    && mkdir -p /usr/local/maldetect/pub/shuttle/tmp /usr/local/maldetect/pub/shuttle/sess /usr/local/maldetect/pub/shuttle/quar /usr/local/maldetect/sigs /usr/local/maldetect/clean /var/log/maldet /run/nextshuttle /quarantine \
+    && chmod -R a+rX /usr/local/maldetect \
+    && chown -R 10001:10001 /usr/local/maldetect/pub/shuttle /usr/local/maldetect/sigs /usr/local/maldetect/clean /var/lib/clamav /run/nextshuttle /quarantine
+WORKDIR /app
+COPY ingestion/prepare_lmd.py /app/ingestion/prepare_lmd.py
+RUN python3 /app/ingestion/prepare_lmd.py
+COPY ingestion/requirements.txt /app/ingestion/requirements.txt
+RUN pip install --no-cache-dir -r /app/ingestion/requirements.txt
+COPY ingestion /app/ingestion
+COPY relay /app/relay
+COPY ingestion/clamd.conf ingestion/freshclam.conf /etc/nextshuttle/
+USER 10001:10001
+CMD ["python3","-m","ingestion.server"]
