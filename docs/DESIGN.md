@@ -151,18 +151,7 @@ Authorization headers never belong in URLs. All object IDs are validated hex.
 
 ## Release gates
 
-The initial relay is an independently tested foundation, not a complete product.
-The first notification app, durable audit feed and ClamAV/native-LMD adapters
-are implemented separately; live Nextcloud/antivirus integration remains to test.
-See [staging.md](staging.md) and [events-and-notifications.md](events-and-notifications.md).
-Before a deployable release: implement/test the browser and PHP crypto together,
-Nextcloud app authorization/settings/UI/jobs, private relay admin UI, real proxy
-prefix behavior, app package installation against 35.0.2, corruption/interruption
-and race testing, credential rotation/recovery, operational limits, and external
-security review. Mandatory quarantine and dual-antivirus acceptance gates are
-specified in [upload-protection.md](upload-protection.md). Fail closed if the
-crypto format is unsupported. Never claim
-compatibility based solely on PHP syntax checks or a mocked Nextcloud environment.
+The transfer clients, native Files/settings/jobs integration, private relay administration, quarantine/import receipts and dual-engine gate are implemented. CI exercises browser/PHP interoperability and a real Nextcloud 35.0.2 installation; live antivirus is a separate workflow. Read the exact candidate commit's results. Proxy behavior, physical mobile push, backup restoration, operational capacity and independent security review require environment acceptance; see [staging.md](staging.md). Never equate a unit fixture or a successful ciphertext upload with malware clearance.
 
 ## Official implementation references
 

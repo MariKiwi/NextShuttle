@@ -1,14 +1,14 @@
-import {api,button} from './api.mjs';
+import {api,button,rotatePassword} from './api.mjs';
 async function refresh(){
  const target=document.getElementById('ns-transfers');if(!target)return;
- try{const {transfers}=await api('transfers');target.replaceChildren();
+ try{const {transfers,policy}=await api('transfers');target.replaceChildren();
   if(!transfers.length){const p=document.createElement('p');p.textContent='Choose a file or folder in Files and select NextShuttle to create your first transfer.';target.append(p);}
   for(const t of transfers){const card=document.createElement('section');card.className='ns-card';const title=document.createElement('h3');title.textContent=t.label;
    const meta=document.createElement('p');meta.textContent=`${t.kind==='inbox'?'Upload inbox':'Download'} · ${t.state} · expires ${new Date(t.expires*1000).toLocaleString()}`;card.append(title,meta);
    if(t.code){const code=document.createElement('textarea');code.readOnly=true;code.value=t.url;code.setAttribute('aria-label','Transfer link');card.append(code,button('Copy link',()=>navigator.clipboard.writeText(t.url)),button('Copy code',()=>navigator.clipboard.writeText(t.code)));}
    if(['queued','preparing','ready','retry','revoking','exhausted'].includes(t.state))card.append(button(t.kind==='inbox'?'Revoke inbox and discard pending uploads':'Revoke',async()=>{try{await api(`transfers/${t.id}/revoke`,{});await refresh();}catch(e){alert(e.message);}}));
    if(t.state==='retry')card.append(button('Retry',async()=>{await api(`transfers/${t.id}/retry`,{});await refresh();}));
-   if(t.kind==='inbox'&&t.state==='ready')card.append(button('Change upload password',async()=>{const password=prompt('New reusable upload password (at least 16 characters)');if(password)try{await api(`transfers/${t.id}/password`,{password});alert('Password changed.');}catch(e){alert(e.message);}}));
+   if(t.kind==='inbox'&&t.state==='ready')card.append(button('Change upload password',()=>rotatePassword(async password=>{await api(`transfers/${t.id}/password`,{password});},policy.min_password)));
    target.append(card);
   }
  }catch(error){target.textContent=error.message;}

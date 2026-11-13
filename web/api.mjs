@@ -1,7 +1,7 @@
 import {getRequestToken} from '@nextcloud/auth';
 import {generateUrl} from '@nextcloud/router';
 export async function api(path='',body=null){
- const response=await fetch(generateUrl('/apps/nextshuttle/'+path),{method:body===null?'GET':'POST',credentials:'same-origin',headers:{requesttoken:getRequestToken(),'Content-Type':'application/json'},body:body===null?null:JSON.stringify(body)});
+ const response=await fetch(generateUrl('/apps/nextshuttle/'+path),{method:body===null?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{requesttoken:getRequestToken(),'Content-Type':'application/json'},body:body===null?null:JSON.stringify(body)});
  const data=await response.json();if(!response.ok)throw Error(data.error||'NextShuttle request failed');return data;
 }
 export function button(label,callback){const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',callback);return b;}
@@ -26,4 +26,14 @@ export async function openTransfer(node){
   await api('transfers',{kind,nodeId:node.fileid,options});status.textContent='Created. Scanning and preparation run in the background. Open NextShuttle to get the code when ready.';form.remove();
  }catch(error){status.textContent=error.message;}finally{submit.disabled=false;}});
  dialog.append(title,name,form,status,button('Close',()=>{dialog.close();dialog.remove();}));document.body.append(dialog);dialog.showModal();
+}
+
+export function rotatePassword(save,minLength=16){
+ const dialog=document.createElement('dialog');dialog.className='ns-dialog';
+ const form=document.createElement('form'),label=document.createElement('label'),input=document.createElement('input'),status=document.createElement('p');
+ label.textContent=`New upload password (at least ${minLength} characters)`;input.type='password';input.autocomplete='new-password';input.minLength=minLength;input.maxLength=256;input.required=true;label.append(input);status.role='status';
+ const submit=document.createElement('button');submit.type='submit';submit.textContent='Change password';
+ form.append(label,submit);dialog.append(form,status,button('Cancel',()=>{dialog.close();dialog.remove();}));
+ form.addEventListener('submit',async e=>{e.preventDefault();submit.disabled=true;try{await save(input.value);input.value='';dialog.close();dialog.remove();}catch(error){status.textContent=error.message;}finally{submit.disabled=false;}});
+ document.body.append(dialog);dialog.showModal();input.focus();
 }

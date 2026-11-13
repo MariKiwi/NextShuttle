@@ -1,20 +1,9 @@
 # Security status
 
-NextShuttle is pre-release software and has not received an independent security
-audit. The current repository contains an opaque storage relay, not a completed
-end-to-end encrypted sharing product. An initial Nextcloud notification app and
-private scan adapters exist, but browser crypto, Files integration, the
-quarantine/import pipeline and private relay admin interface are unfinished.
+NextShuttle is development software with implemented encrypted transfer, private scanning/import and administration paths. It has not received an independent security audit. Require successful CI for the exact commit and complete the environment acceptance checks in docs/staging.md before broader use.
 
-Do not send plaintext files to the relay or expose a development instance publicly.
-The relay cannot tell ciphertext from plaintext. That boundary must be enforced by
-the trusted app/browser clients before a release.
+The public relay stores ciphertext and does not receive Nextcloud credentials, plaintext or decryption keys. Browser-to-Nextcloud encryption trusts the JavaScript delivered by the public origin; a compromised site could replace that code. Nextcloud itself is a trusted endpoint. Code secrecy, TLS, private routing and protected endpoint devices remain necessary.
 
-Report suspected vulnerabilities privately to the repository owner through
-GitHub's private vulnerability reporting if enabled; otherwise contact the owner
-privately. Do not put access tokens, private keys or personal file contents into
-public issues.
+ClamAV and native Linux Malware Detect must both return clean completed verdicts. Stale/unavailable scanners, malformed encrypted data and uninspectable formats block import. LMD offers narrower Linux/web-malware coverage. No scanner pair or structural validator can guarantee that every file is harmless. Keep host/container dependencies and definitions updated and use only synthetic data during staging.
 
-The threat model and outstanding release gates are in docs/DESIGN.md. Security
-tests cover behavior of implemented components; they do not establish security of
-an incomplete application or of a live proxy configuration.
+Report vulnerabilities privately through GitHub private vulnerability reporting if enabled, or contact the repository owner privately. Do not publish credentials, private keys, personal files or exploitable deployment details in public issues. See docs/DESIGN.md for trust boundaries.

@@ -22,7 +22,7 @@ docker run -d --name relay-private --network nextshuttle-ci -e NEXTSHUTTLE_DATA=
 docker run -d --name relay-public --network nextshuttle-ci -v nextshuttle-ci-data:/data -e NEXTSHUTTLE_DATA=/data nextshuttle:ci --mode public --bind 0.0.0.0 --port 8080
 docker run -d --name stub-scanner --network nextshuttle-ci -v "$PWD/tests/stub_scanner.py:/stub.py:ro" python:3.12-slim-bookworm python3 /stub.py
 docker run -d --name private-proxy --network nextshuttle-ci --network-alias shuttle.helios.lan -v "$PWD/ci-state/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$PWD/ci-state:/certs:ro" nginx:stable-alpine
-docker run -d --name nextcloud-test --network nextshuttle-ci -p 127.0.0.1:9083:80 -e NEXTCLOUD_ADMIN_USER=admin -e NEXTCLOUD_ADMIN_PASSWORD=ephemeral-ci-admin-password-246810 -e SQLITE_DATABASE=nextcloud -v "$PWD/nextcloud/nextshuttle:/var/www/html/custom_apps/nextshuttle:ro" nextcloud:35.0.2-apache
+docker run -d --name nextcloud-test --network nextshuttle-ci -p 127.0.0.1:9083:80 -e NEXTCLOUD_ADMIN_USER=admin -e NEXTCLOUD_ADMIN_PASSWORD=ephemeral-ci-admin-password-246810 -e SQLITE_DATABASE=nextcloud -e 'NEXTCLOUD_TRUSTED_DOMAINS=localhost 127.0.0.1' -v "$PWD/nextcloud/nextshuttle:/var/www/html/custom_apps/nextshuttle:ro" nextcloud:35.0.2-apache
 ready=0
 for attempt in $(seq 1 90); do
  if docker exec -u www-data nextcloud-test php occ status --output=json 2>/dev/null | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin).get("installed") else 1)' 2>/dev/null; then ready=1;break;fi
@@ -34,3 +34,6 @@ docker cp tests/nextcloud-integration.php nextcloud-test:/tmp/nextshuttle-integr
 docker exec -u www-data nextcloud-test php occ app:enable notifications
 docker exec -u www-data nextcloud-test php occ app:enable nextshuttle
 docker exec -u www-data nextcloud-test php /tmp/nextshuttle-integration.php
+
+docker cp nextcloud-test:/tmp/http-fixture.json ci-state/http-fixture.json
+python3 tests/nextcloud_http.py

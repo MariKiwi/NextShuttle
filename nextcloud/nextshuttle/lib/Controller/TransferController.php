@@ -11,16 +11,22 @@ use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
 use OCP\IUserSession;
 class TransferController extends Controller {
+    private function json(mixed $data,int $status=200): JSONResponse {
+        $response=new JSONResponse($data,$status);
+        $response->addHeader('Cache-Control','no-store');
+        $response->addHeader('Pragma','no-cache');
+        return $response;
+    }
     public function __construct(IRequest $request,private IUserSession $session,private Shuttle $shuttle,private Transfers $transfers,private Policy $policy) { parent::__construct('nextshuttle',$request); }
     private function uid(): string {
         $user=$this->session->getUser(); if ($user===null) { throw new \RuntimeException('Authentication required'); } return $user->getUID();
     }
     private function safely(callable $work): JSONResponse {
-        try { return new JSONResponse($work()); }
-        catch (\InvalidArgumentException $e) { return new JSONResponse(['error'=>$e->getMessage()],400); }
-        catch (\OCP\Files\NotFoundException $e) { return new JSONResponse(['error'=>'Transfer not found'],404); }
-        catch (\OCP\Files\NotPermittedException $e) { return new JSONResponse(['error'=>'This transfer is not permitted'],403); }
-        catch (\Throwable $e) { return new JSONResponse(['error'=>'Operation unavailable. Check the transfer status and administrator settings.'],503); }
+        try { return $this->json($work()); }
+        catch (\InvalidArgumentException $e) { return $this->json(['error'=>$e->getMessage()],400); }
+        catch (\OCP\Files\NotFoundException $e) { return $this->json(['error'=>'Transfer not found'],404); }
+        catch (\OCP\Files\NotPermittedException $e) { return $this->json(['error'=>'This transfer is not permitted'],403); }
+        catch (\Throwable $e) { return $this->json(['error'=>'Operation unavailable. Check the transfer status and administrator settings.'],503); }
     }
     #[NoAdminRequired] #[NoCSRFRequired]
     public function index(): JSONResponse { return $this->safely(fn()=>['transfers'=>array_map(Transfers::publicRow(...),$this->transfers->list($this->uid())),'policy'=>$this->policy->get()]); }

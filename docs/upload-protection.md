@@ -2,14 +2,7 @@
 
 ## Status
 
-This is a required design, **not a completed scanning pipeline**. Private scan
-adapters and a strict text-file test gate exist; decryption/import integration
-and actual-engine acceptance tests remain unfinished. The relay
-currently accepts bounded opaque bytes; it cannot distinguish encrypted content
-from plaintext, corruption or malware. A successful upload is not scan clearance.
-Only isolated relay API tests with synthetic data are appropriate now. End-to-end
-testing still requires Files integration, browser crypto, admin UI and the full pipeline.
-Docker runtime and live Nextcloud 35.0.2 integration also remain unverified.
+The private decryption, quarantine, dual-engine scan and Nextcloud import pipeline is implemented. Browser/PHP interoperability and actual Nextcloud 35.0.2 transfer/import tests run in CI. The real-antivirus workflow separately tests actual engines; require its successful result for the commit being deployed. A relay upload receipt alone never authorizes import.
 
 ## Private ingestion pipeline
 
@@ -77,10 +70,7 @@ skipping an oversized file is not clean inspection.
 
 ## Content policy and containment
 
-Initial strict test policy allows only specifically validated types, blocks
-executables/scripts/active web content/macro-enabled documents, and blocks archives
-until bounded recursive inspection is implemented. An extension denylist alone
-is insufficient. Broader formats need explicit policy and tests.
+The implemented allowlist is UTF-8 text, PNG/JPEG, constrained PDF, macro-free DOCX/XLSX/PPTX and bounded ZIP. Pillow verifies and decodes images; pikepdf checks PDF structure and rejects active actions, embedded files and encryption; defusedxml checks Office XML and relationships. ZIP inspection rejects unsafe names, duplicates, special entries, encryption and trailing data, and enforces three levels, 1,000 entries, 128 MiB expanded bytes and a 100:1 ratio. Both engines scan the original and every extracted member. No extension or MIME claim alone permits a file. Unsupported formats and validator uncertainty block import. These conservative validators can reject valid files and cannot establish complete semantic correctness or absence of vulnerabilities.
 
 Archive support must enforce depth, entry count, actual expanded bytes, compression
 ratio, CPU, disk and time limits. Reject encrypted/unsupported archives, unsafe

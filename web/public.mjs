@@ -1,7 +1,8 @@
 import {ready,unb64,encrypt,decrypt,cipherSize,MAX_CIPHER} from './crypto.mjs';
 const $=id=>document.getElementById(id), status=$('status'), form=$('transfer-form');
 const say=text=>{status.textContent=text;};
-if(location.hash){try{$('code').value=decodeURIComponent(location.hash.slice(1));}catch{say('Invalid transfer code');}history.replaceState(null,'',location.pathname);}
+function consumeHash(){if(!location.hash)return;try{$('code').value=decodeURIComponent(location.hash.slice(1));$('password').value='';$('file').value='';$('result').replaceChildren();say('Files are encrypted before upload and decrypted on your device.');}catch{say('Invalid transfer code');}history.replaceState(null,'',location.pathname);$('code').dispatchEvent(new Event('input'));recordView();}
+window.addEventListener('hashchange',consumeHash);
 function parse(){
  const parts=$('code').value.trim().split('.');
  if(!/^[a-f0-9]{32}$/.test(parts[1]??''))throw Error('Enter a complete NextShuttle code');
@@ -50,4 +51,4 @@ form.addEventListener('submit',async event=>{
 $('code').addEventListener('input',()=>{const upload=$('code').value.trim().startsWith('U.');$('upload-fields').hidden=!upload;$('submit').textContent=upload?'Encrypt and upload':'Decrypt and download';});
 $('code').dispatchEvent(new Event('input'));
 async function recordView(){try{await ready();const code=parse();if(code.kind==='D')await fetch(`./api/v1/downloads/${code.id}/view`,{method:'POST',headers:{Authorization:'Bearer '+code.token},body:'',credentials:'omit',referrerPolicy:'no-referrer'});}catch{}}
-$('code').addEventListener('change',recordView);recordView();
+$('code').addEventListener('change',recordView);if(location.hash)consumeHash();else recordView();

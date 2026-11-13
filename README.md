@@ -1,42 +1,42 @@
 # NextShuttle
 
-Private Nextcloud, public encrypted file transfers.
+Encrypted file transfers for a private **Nextcloud 35.0.2** installation.
 
-Target: **Nextcloud 35.0.2**. Public URL:
-`https://helios-public.tail43e437.ts.net/nextshuttle/`.
-Private relay: `https://shuttle.helios.lan/`.
+Public: **https://helios-public.tail43e437.ts.net/nextshuttle/**  
+Private administration and service API: **https://shuttle.helios.lan/**
 
-This repository is under development. See [DESIGN.md](docs/DESIGN.md) for the
-security boundary, protocol, requirements and release gates. Do not expose an
-unfinished build publicly. A working component is not a security audit.
+## Features
 
-The relay has separate public and private applications. It never receives a
-Nextcloud credential or a file decryption key. Nextcloud initiates every
-connection. Expiry is checked on access, independently of cleanup jobs.
+* Files actions and sharing-sidebar integration: publish an encrypted file snapshot or open an upload inbox for a folder.
+* Unique download codes, optional separate passwords, download limits, expiry and revocation. Upload inboxes have reusable passwords, pinned public encryption keys and lifetime file/byte budgets.
+* Browser-to-Nextcloud authenticated encryption. The public relay stores ciphertext; private keys remain in Nextcloud. Uploads are decrypted only inside the private network.
+* Private quarantine, bounded format validation, ClamAV **and Linux Malware Detect's independent native engine**, then collision-safe import with durable receipts. Both scanners must approve the identical bytes. Outgoing snapshots also require clearance.
+* Owner-only transfer dashboard, retries, password rotation and event history. Nextcloud admin settings control sharing policies, groups, expiry, types and quotas while respecting native sharing permissions.
+* Separate private relay admin page with its own credential, CSRF protection, revocation and audit export/retention controls.
+* Durable event and notification queues for every enabled global admin and the affected owner. Covers access, wrong codes, transfers, rejection, scanner outages, policy changes and other noteworthy events.
 
-## Current implementation
+The Compose stack separates public/private relay processes, ingestion, ClamAV and signature updates. Only the updater needs Internet access; scanners receive no Nextcloud credentials or decryption keys.
 
-The initial relay implements bounded opaque-object storage, unique download
-credentials, password-protected upload inboxes, expiry, revocation, atomic
-download limits, persistent rate limiting, storage reservations and private
-management and a durable audit journal. The initial Nextcloud app includes an
-event page, admin status and native notifications for admins and mapped owners.
-Private ClamAV/native-LMD scan adapters and a strict text-file test gate exist.
-File sharing, browser encryption and import integration remain unfinished;
-the relay API deliberately accepts **ciphertext only** and must
-not be exposed as a general plaintext file-sharing server.
+## Start a test deployment
 
-Run the security behavior tests with `python3 -m unittest discover -s tests -v`.
-See [deployment.md](docs/deployment.md) before configuring the container.
+Follow [deployment.md](docs/deployment.md), then [staging.md](docs/staging.md).
+Use a disposable Nextcloud and synthetic files first. No deployment has been made on your server.
+The app package is produced by the **Relay checks** workflow; source installs require `npm ci && npm run build` before copying the app.
 
-## Mandatory upload protection
+The implementation is a development build, not an independently audited production release. The remaining environment acceptance checks are tracked in staging.md. No scanner can guarantee that a file is harmless. Browser encryption also trusts the JavaScript delivered by the public site; a compromised relay could replace that code. See [DESIGN.md](docs/DESIGN.md).
 
-Before an end-to-end test deployment, uploads must pass private quarantine,
-authenticated decryption, strict content policy, **ClamAV and a second independent
-antivirus engine** before Nextcloud import. Scanner errors, stale definitions and
-uninspectable files must block import. Adapters exist, but the complete
-quarantine/decryption/import pipeline is not yet integrated;
-see [upload-protection.md](docs/upload-protection.md) for requirements and tests.
-See [staging.md](docs/staging.md) for staged testing and remaining release gates,
-and [events-and-notifications.md](docs/events-and-notifications.md) for event
-audiences, offline replay, push prerequisites and delivery semantics.
+## Validation
+
+```sh
+python3 -m pip install -r ingestion/requirements.txt
+python3 -m unittest discover -s tests -v
+npm ci
+npm test
+npm run build
+npx playwright install chromium
+npx playwright test
+```
+
+CI additionally checks PHP syntax, PHP/browser crypto interoperability, real Nextcloud 35.0.2 transfer processing and live antivirus startup/clearance/EICAR rejection. Browser tests use synthetic data on isolated loopback services. Read workflow results for the exact commit being deployed.
+
+Details: [upload protection](docs/upload-protection.md), [events and notifications](docs/events-and-notifications.md), [security policy](SECURITY.md).

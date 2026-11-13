@@ -65,3 +65,5 @@ foreach (['admin','second-admin','alice'] as $uid) {
 }
 $shuttle->revoke('alice',$inbox['id']);check($transfers->get($inbox['id'],'alice')['state']==='revoked','Inbox revocation failed');
 echo "Nextcloud 35.0.2 integration: outgoing/incoming encryption, scan transport, import retries, rejection, owner isolation and admin/owner notifications passed.\n";
+
+file_put_contents('/tmp/http-fixture.json',json_encode(['file'=>(int)$file->getId(),'transfer'=>$download['id']],JSON_THROW_ON_ERROR));
