@@ -68,7 +68,8 @@ contents never authorize listing, retrieval, overwriting or deleting inbox files
 
 The private app polls encrypted uploads. It validates ownership and current folder
 write permissions, safely decrypts to a bounded staging area, verifies FINAL,
-validates filename/size, scans or quarantines according to policy, and imports via
+validates filename/size, quarantines and requires clean verdicts from both ClamAV
+and a second independent antivirus engine, and only then imports via
 Nextcloud's filesystem API. Use unique names, never overwrite by default. A durable
 receipt keyed by upload ID prevents duplicate imports after retries. Acknowledge
 only after the file and receipt are committed. Missing/deleted owners and folders
@@ -155,7 +156,9 @@ Before a deployable release: implement/test the browser and PHP crypto together,
 Nextcloud app authorization/settings/UI/jobs, private relay admin UI, real proxy
 prefix behavior, app package installation against 35.0.2, corruption/interruption
 and race testing, credential rotation/recovery, operational limits, and external
-security review. Fail closed if the crypto format is unsupported. Never claim
+security review. Mandatory quarantine and dual-antivirus acceptance gates are
+specified in [upload-protection.md](upload-protection.md). Fail closed if the
+crypto format is unsupported. Never claim
 compatibility based solely on PHP syntax checks or a mocked Nextcloud environment.
 
 ## Official implementation references

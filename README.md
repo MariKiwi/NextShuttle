@@ -25,3 +25,12 @@ not be exposed as a general plaintext file-sharing server.
 
 Run the security behavior tests with `python3 -m unittest discover -s tests -v`.
 See [deployment.md](docs/deployment.md) before configuring the container.
+
+## Mandatory upload protection
+
+Before an end-to-end test deployment, uploads must pass private quarantine,
+authenticated decryption, strict content policy, **ClamAV and a second independent
+antivirus engine** before Nextcloud import. Scanner errors, stale definitions and
+uninspectable files must block import. This pipeline is not implemented yet;
+see [upload-protection.md](docs/upload-protection.md) for requirements and tests.
+Only isolated relay API tests are currently appropriate.
