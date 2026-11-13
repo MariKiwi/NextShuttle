@@ -189,7 +189,7 @@ class Shuttle {
             clearstatcache(true,$cipher);$options['cipher_bytes']=filesize($cipher); $options['scan']=$receipt;
             $this->transfers->update($id,['secret'=>$secret,'options'=>$options]);
             $this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>$secret['password']??null,'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
-            $in=fopen($cipher,'rb'); try { $this->relay->put($id,$in,$options['cipher_bytes']); } finally { fclose($in); }
+            $in=fopen($cipher,'rb'); try { $this->relay->put($id,$in,$options['cipher_bytes']); } finally { if (is_resource($in)) { fclose($in); } }
             $this->transfers->update($id,['state'=>'ready']);
         } finally { @unlink($plain); @unlink($cipher); }
     }

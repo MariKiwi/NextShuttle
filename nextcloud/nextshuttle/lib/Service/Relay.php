@@ -28,7 +28,7 @@ class Relay {
         try {
             stream_set_timeout($stream,180); $raw=stream_get_contents($stream,4194305);
             if ($raw===false||strlen($raw)>4194304||(stream_get_meta_data($stream)['timed_out']??false)) { throw new \RuntimeException('Service response limit'); }
-        } finally { fclose($stream); }
+        } finally { if (is_resource($stream)) { fclose($stream); } }
         if (!in_array($response->getStatusCode(),$accepted,true)) { throw new \RuntimeException('Private service request failed'); }
         $data=json_decode($raw,true,32,JSON_THROW_ON_ERROR); if (!is_array($data)) { throw new \UnexpectedValueException('Invalid service response'); } return $data;
     }
@@ -65,7 +65,7 @@ class Relay {
             $response=$this->request('POST','scan',['body'=>$stream,'headers'=>['Content-Length'=>(string)$size,'Content-Type'=>'application/octet-stream','X-NextShuttle-Name'=>base64_encode(FileCrypto::safeName($filename))]],true);
             $receipt=$this->json($response,[200,422]);
             if ($response->getStatusCode()===422) { throw new ScanRejected(($receipt['reason']??'')==='malware_detected'?'malware_detected':'content_rejected'); }
-        } finally { fclose($stream); }
+        } finally { if (is_resource($stream)) { fclose($stream); } }
         $engines=array_column($receipt['verdicts']??[],'engine'); sort($engines);
         if ($engines!==['clamav','lmd-native']||($receipt['sha256']??'')!==$hash||($receipt['bytes']??0)!==$size||hash_file('sha256',$path)!==$hash) { throw new \RuntimeException('Invalid scanner approval'); }
         return $receipt;

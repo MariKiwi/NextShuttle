@@ -3,6 +3,7 @@ declare(strict_types=1);
 define('OC_CONSOLE',true);
 require '/var/www/html/lib/base.php';
 \OC_App::loadApps();
+set_exception_handler(static function(\Throwable $error): void { fwrite(STDERR,(string)$error.\PHP_EOL);exit(1); });
 if (($argv[1]??'')==='worker') { \OC::$server->get(\OCA\NextShuttle\Service\Shuttle::class)->synchronize();exit(0); }
 function work(): void {
     $process=proc_open([PHP_BINARY,__FILE__,'worker'],[0=>['file','/dev/null','r'],1=>STDOUT,2=>STDERR],$pipes);
@@ -30,7 +31,7 @@ $file=$folder->newFile('outgoing.txt','ordinary outgoing CI content');
 $download=$shuttle->create('alice','download',(int)$file->getId(),['ttl'=>3600]);
 check(!isset($download['secret']),'Public row exposed secret storage');
 work();$ready=$transfers->get($download['id'],'alice');
-check($ready['state']==='ready','Outgoing transfer did not become ready');
+check($ready['state']==='ready','Outgoing transfer did not become ready: '.$ready['state']);
 try { $transfers->get($download['id'],'bob');throw new RuntimeException('Owner isolation bypass'); } catch (\OCP\Files\NotFoundException $expected) {}
 function publicRequest(string $method,string $path,string $body,array $headers=[]): string {
     $raw=file_get_contents('http://relay-public:8080/nextshuttle/api/v1/'.$path,false,stream_context_create(['http'=>[
