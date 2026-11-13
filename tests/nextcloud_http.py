@@ -3,19 +3,22 @@ import html
 import http.cookiejar
 import json
 import re
+import ssl
 from pathlib import Path
 from urllib.parse import urlencode
-from urllib.request import build_opener,HTTPCookieProcessor,Request
+from urllib.request import build_opener,HTTPCookieProcessor,HTTPSHandler,Request
 from urllib.error import HTTPError
-BASE='http://127.0.0.1:9083'
+BASE='https://localhost:9083'
 fixture=json.loads(Path('ci-state/http-fixture.json').read_text())
 class Client:
     def __init__(self,user,password):
-        self.opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()),HTTPSHandler(context=ssl.create_default_context(cafile='ci-state/ca.crt')))
         with self.opener.open(BASE+'/login') as r:page=r.read().decode()
         token=html.unescape(re.search(r'data-requesttoken="([^"]+)"',page).group(1))
         body=urlencode({'user':user,'password':password,'requesttoken':token}).encode()
-        with self.opener.open(Request(BASE+'/login',data=body)) as r:page=r.read().decode()
+        with self.opener.open(Request(BASE+'/login',data=body,headers={'Origin':BASE,'Referer':BASE+'/login'})) as r:
+            page=r.read().decode()
+            assert '/login' not in r.url,'Login did not establish a session for '+user
         self.token=html.unescape(re.search(r'data-requesttoken="([^"]+)"',page).group(1))
     def request(self,path,data=None,csrf=True):
         headers={'Accept':'application/json'}
