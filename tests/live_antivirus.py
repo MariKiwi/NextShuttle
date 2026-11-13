@@ -16,9 +16,14 @@ def request(data):
 
 ready=False
 data={}
+deadline=time.monotonic()+600
 for attempt in range(60):
+    if time.monotonic()>deadline:break
     try:
         code,data=request(b'ordinary live scanner probe\n')
+        print('Scanner probe',attempt,code,data,flush=True)
+        if code!=200 and attempt>=3 and data.get('reason') not in ('scanner_unavailable','stale_or_missing_signatures','stale_signatures'):
+            raise RuntimeError('Real scan did not complete: '+repr(data))
         if code==200:
             assert sorted(v['engine'] for v in data['verdicts'])==['clamav','lmd-native']
             ready=True;break

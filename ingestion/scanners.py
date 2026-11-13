@@ -169,7 +169,7 @@ class LMD:
         started = int(self.clock())
         try:
             signature_version = (self.signatures / "maldet.sigs.ver").read_text().strip()
-            options = "scan_user_access=1,scan_clamscan=0,scan_hashtype=both,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
+            options = "scan_user_access=1,scan_clamscan=0,scan_workers=1,scan_hashtype=both,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
             code, output = self.runner([self.executable, "--config-option", options, "--scan-all", str(path)], self.timeout)
             if code == 2:
                 raise Blocked("malware_detected", self.name)
