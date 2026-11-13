@@ -2,11 +2,13 @@
 
 ## Status
 
-This is a required design, **not an implemented scanning pipeline**. The relay
+This is a required design, **not a completed scanning pipeline**. Private scan
+adapters and a strict text-file test gate exist; decryption/import integration
+and actual-engine acceptance tests remain unfinished. The relay
 currently accepts bounded opaque bytes; it cannot distinguish encrypted content
 from plaintext, corruption or malware. A successful upload is not scan clearance.
 Only isolated relay API tests with synthetic data are appropriate now. End-to-end
-testing still requires the app, browser crypto, admin UI and this entire pipeline.
+testing still requires Files integration, browser crypto, admin UI and the full pipeline.
 Docker runtime and live Nextcloud 35.0.2 integration also remain unverified.
 
 ## Private ingestion pipeline
@@ -46,17 +48,17 @@ the current policy and sufficiently recent signature/engine versions.
 
 ClamAV plus another ClamAV instance or additional signatures is NOT two engines.
 YARA is useful supplementary detection, but does not replace independent antivirus.
-Sophos Protection for Linux and ESET Server Security for Linux are candidates
-with documented local CLI scanners. Selection, supported platform, license and
-privacy configuration must be settled before installation. Do not purchase,
-accept terms or enable sample submission automatically. Vendor agents may need
-a supported private VM rather than a generic hardened container.
+The selected free second scanner is Linux Malware Detect (LMD), GPLv2, using its
+native engine with `scan_clamscan=0`. Its Linux/web-malware focus is narrower than
+broad commercial antivirus coverage. It is an additional independent malware
+pass, not proof of comprehensive detection. See staging.md for pinned-version
+adapter details. Do not enable external sample submission.
 
 Use clamd for ongoing scanning on a private socket/network, never publicly exposed.
 Adapters must map documented results to CLEAN, DETECTED, UNINSPECTABLE or ERROR.
-Unknown responses block import. Sophos return code 0 is a completed clean scan;
-other results, including password protection and errors, are not clean. ESET
-results indicating cleaning, unscanned files, threats or errors also block.
+Unknown responses block import. LMD clearance requires a completed native-engine
+report for the exact single file, no hits, no cleaning/quarantine and current
+signatures, not simply a successful process exit.
 Do not automatically clean and import a replacement: modification invalidates the
 original hash/verdict. Submission to an asynchronous scanner is not a verdict.
 
@@ -126,3 +128,4 @@ also limits damage from vulnerabilities in the scanners and validators themselve
 * https://docs.sophos.com/esg/spl/en-US/index.html?contextID=protect-devices-server-Linux-agent
 * https://help.eset.com/essl/11.1/en-US/on_demand_scan_via_terminal.html
 * https://help.eset.com/essl/11.1/en-US/activate.html
+* https://github.com/rfxn/linux-malware-detect

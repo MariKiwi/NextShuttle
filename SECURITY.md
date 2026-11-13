@@ -2,8 +2,9 @@
 
 NextShuttle is pre-release software and has not received an independent security
 audit. The current repository contains an opaque storage relay, not a completed
-end-to-end encrypted sharing product. No browser encryption client, Nextcloud app,
-or private administrator web interface is included yet.
+end-to-end encrypted sharing product. An initial Nextcloud notification app and
+private scan adapters exist, but browser crypto, Files integration, the
+quarantine/import pipeline and private relay admin interface are unfinished.
 
 Do not send plaintext files to the relay or expose a development instance publicly.
 The relay cannot tell ciphertext from plaintext. That boundary must be enforced by

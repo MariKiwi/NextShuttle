@@ -1,7 +1,9 @@
 # Development deployment
 
 **Not a public release.** The current relay is an API foundation. Browser crypto,
-Nextcloud integration and the private admin interface remain release gates.
+Files integration, the complete ingestion pipeline and the private relay admin
+interface remain release gates. The initial notification app can be tested
+separately; see [staging.md](staging.md).
 The mandatory private quarantine and dual-antivirus pipeline is also a release
 gate; see [upload-protection.md](upload-protection.md). A successful opaque upload
 is not a malware clearance or approval to import into Nextcloud.

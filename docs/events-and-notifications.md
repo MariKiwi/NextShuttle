@@ -1,0 +1,76 @@
+# Audit events and notifications
+
+The relay journals transfer creation/readiness, inbox creation, upload reservation
+and receipt, download authorization/served bytes/interruption, wrong codes,
+rejected access, rate limits, password changes, revocation, expiry, landing-page
+access and service errors. Private ingestion may report scanner unavailability,
+malware/content rejection, clearance and import. Those reports are NOT yet
+automatically generated: decryption/scanning/import wiring remains unfinished.
+
+`download_served` means the HTTP handler sent bytes, not proof of saving or
+decryption. `upload_received` is not scan clearance. Wrong-code HTTP responses
+stay generic; internal events never contain the attempted password or code.
+An unknown ID produces denied access because no specific code can be verified.
+
+Events contain allowlisted names, severity, UTC timestamp, sequence, byte count
+and validated opaque object/inbox IDs. They exclude passwords, tokens, keys,
+query strings, raw request headers, user agents, filenames, private paths,
+plaintext and arbitrary scanner output. Owner mappings stay inside Nextcloud.
+
+Private POST endpoints are `/api/v1/events/read` (`after`, `limit` up to 100),
+`events/ack` (`through`) and `events/report` (allowlisted ingestion events only).
+Successful feed polls do not generate recursive events. Public routing cannot
+reach these endpoints. State changes and journal entries share a transaction
+where possible; network outcomes are separate subsequent events.
+
+The journal survives restarts and Nextcloud outages. Acknowledging never deletes
+history. A persistent journal ID lets the bridge detect a replaced/reset relay
+volume. Capacity is initially 100,000 records: full storage rejects new audited
+operations instead of silently dropping records. Export/retention/rotation is
+still a deployment gate. This SQLite journal is not tamper-proof against a relay
+compromise; independent append-only storage is needed for that threat model.
+
+## Native Nextcloud notification bridge
+
+The development app under `nextcloud/nextshuttle` registers a native notifier,
+background collection, migrations, a read-only admin status section and an
+authenticated event page. Files sharing, crypto/import and editable policies
+remain unfinished. See staging.md for installation/testing prerequisites.
+
+Each event creates a durable outbox addressed to every enabled global admin and
+the enabled owner, with duplicates removed when the owner is also an admin.
+The future transfer-creation flow must register ownership automatically. Initial
+staging uses `occ nextshuttle:owner OBJECT_ID USER_ID` before collecting events.
+Uploads inherit their inbox's owner. Users can see only their own events; global
+admins can see all. Membership is rechecked at notification handoff, so removed
+admins do not keep receiving unrelated alerts. Deleted/disabled users are skipped
+explicitly rather than blocking the entire delivery queue.
+
+Generic page visits and unknown codes cannot identify an owner, so admins alone
+receive those alerts. Wrong codes for known transfers also alert the mapped
+owner. Fragment-based secrets are invisible to HTTP; a future transfer-specific
+page-view report needs an authenticated context, never a raw fragment in a log.
+
+Every event queues an individual notification; no sampling/aggregation has been
+assumed. High traffic can create a backlog. Each cron execution collects at most
+500 events and hands off at most 1,000 recipient notifications, retaining the
+rest. A later explicit batching policy can reduce noise without losing records.
+
+Handoff uses Nextcloud's native notification API and normal mobile/web push
+infrastructure. A mobile push requires a registered client, working push service
+and permitted OS notification settings. Neither this app nor a successful API
+call proves a device displayed/read the alert. Generic labels/event numbers keep
+secrets and private filenames off lock screens.
+
+The job is eligible every 60 seconds but actual latency follows cron cadence
+(often five minutes), queue depth and availability. Events/outbox entries survive
+outages; already-collected notifications can proceed while the relay is offline.
+Handoff is at-least-once: a crash after sending but before checkpointing may
+produce a repeat alert. Stable event IDs correlate repeats; exactly-once push is
+not promised. Acknowledgement occurs after local event/outbox persistence.
+
+Validate this inside Nextcloud 35.0.2, including migrations, admin/owner audiences,
+per-user filtering, offline replay, retries and actual mobile registration. PHP
+syntax parsing and unit tests are not live Nextcloud integration tests.
+
+Reference: https://github.com/nextcloud/notifications/blob/master/docs/notification-workflow.md

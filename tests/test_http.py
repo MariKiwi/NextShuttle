@@ -75,6 +75,29 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertIn("access_token", json.loads(body))
 
+    def test_page_and_wrong_codes_are_logged_without_credentials(self):
+        self.assertEqual(self.request("public", "GET", "/nextshuttle/?password=must-not-log")[0], 200)
+        obj = self.store.create_download({"bytes": 6, "ttl": 60})
+        self.store.write("download", obj["id"], BytesIO(b"cipher"), 6)
+        self.assertEqual(self.request("public", "POST", "/nextshuttle/api/v1/downloads/" + obj["id"] + "/fetch", b"", {"Authorization": "Bearer wrong-secret"})[0], 404)
+        events = self.store.events()["events"]
+        self.assertEqual(events[0]["kind"], "page_accessed")
+        self.assertEqual(events[-1]["kind"], "wrong_code")
+        self.assertEqual(events[-1]["object_id"], obj["id"])
+        self.assertNotIn("must-not-log", str(events))
+        self.assertNotIn("wrong-secret", str(events))
+
+    def test_event_feed_private_and_poll_does_not_create_feedback_loop(self):
+        self.store.event("page_accessed")
+        auth = {"Authorization": "Bearer " + self.token, "Content-Type": "application/json"}
+        for _ in range(2):
+            status, body, _ = self.request("private", "POST", "/api/v1/events/read", b'{"after":0}', auth)
+            self.assertEqual(status, 200)
+            self.assertEqual(len(json.loads(body)["events"]), 1)
+        self.assertEqual(self.request("private", "POST", "/api/v1/events/ack", b'{"through":1}', auth)[0], 200)
+        self.assertEqual(self.store.events()["acknowledged"], 1)
+        self.assertEqual(self.request("public", "POST", "/nextshuttle/api/v1/events/read", b'{"after":0}', auth)[0], 404)
+
 
 if __name__ == "__main__":
     unittest.main()

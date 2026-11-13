@@ -61,7 +61,17 @@ def handler(store, mode, service_token, public_url):
         def log_message(self, *args):
             pass
 
+        def send_error(self, code, message=None, explain=None):
+            # Parser/unsupported-method errors bypass dispatch. Never echo their
+            # raw request line into logs or into an error document.
+            try:
+                store.event("request_rejected", severity="warning")
+                self.respond({"error": "Request rejected"}, code)
+            except (Rejected, BrokenPipeError, ConnectionResetError, TimeoutError):
+                self.close_connection = True
+
         def headers_out(self, status, length, content_type="application/json"):
+            self.response_started = True
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(length))
@@ -140,6 +150,19 @@ def handler(store, mode, service_token, public_url):
                     return self.respond(store.list())
                 if method == "GET" and path == "uploads":
                     return self.respond(store.list(True))
+                if method == "POST" and path == "events/read":
+                    data = self.body()
+                    return self.respond(store.events(data.get("after", 0), data.get("limit", 100)))
+                if method == "POST" and path == "events/ack":
+                    return self.respond(store.acknowledge(self.body().get("through")))
+                if method == "POST" and path == "events/report":
+                    from relay.audit import SCANNER_KINDS
+                    data = self.body()
+                    if data.get("kind") not in SCANNER_KINDS:
+                        raise Rejected(400, "Unsupported ingestion event")
+                    sequence = store.event(data["kind"], data.get("object_id"), data.get("parent_id"),
+                        "critical" if data["kind"] == "malware_detected" else "warning" if data["kind"] in ("content_rejected", "scan_unavailable") else "info")
+                    return self.respond({"sequence": sequence}, 201)
                 if method == "POST" and path == "cleanup":
                     self.body()
                     return self.respond(store.cleanup())
@@ -180,19 +203,55 @@ def handler(store, mode, service_token, public_url):
             handle, length = store.fetch(kind, ident, self.token())
             with handle:
                 self.headers_out(200, length, "application/octet-stream")
-                while chunk := handle.read(65536):
-                    self.wfile.write(chunk)
+                try:
+                    while chunk := handle.read(65536):
+                        self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    if kind == "download":
+                        store.event("download_interrupted", ident, severity="warning")
+                    raise
+            if kind == "download":
+                # Served bytes != proof a recipient saved/decrypted the file.
+                store.event("download_served", ident, size=length)
+
+        def journal_error(self, kind):
+            parsed = urlsplit(self.path)
+            match = re.fullmatch(re.escape(prefix) + r"(?:downloads|inboxes|uploads)/([a-f0-9]{32})(?:/[a-z]+)?", parsed.path)
+            ident = match[1] if match else None
+            parent = None
+            if ident and "/uploads/" in parsed.path:
+                with store.tx() as db:
+                    row = db.execute("SELECT inbox FROM uploads WHERE id=?", (ident,)).fetchone()
+                    parent = row[0] if row else None
+            store.event(kind, ident, parent, severity="warning")
 
         def request(self):
+            self.response_started = False
             try:
+                parsed = urlsplit(self.path)
+                if mode == "public" and self.command == "GET" and parsed.path in (origin.path, origin.path.rstrip("/")):
+                    store.rate(self.client_address[0], scope=mode)
+                    store.event("page_accessed")
+                    return self.respond({"service": "NextShuttle", "status": "development", "transfer_ui_ready": False})
                 self.dispatch()
             except Rejected as error:
-                self.respond({"error": error.message}, error.status)
+                try:
+                    # Polling endpoints do not create audit events recursively.
+                    self.journal_error(error.audit_kind or ("rate_limited" if error.status == 429 else "access_denied" if error.status in (401,403,404) else "request_rejected"))
+                except Rejected as journal_error:
+                    error = journal_error
+                if not self.response_started:
+                    self.respond({"error": error.message}, error.status)
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 pass
             except Exception:
                 # Do not leak paths, passwords or internal exception details.
-                self.respond({"error": "Internal relay error"}, 500)
+                try:
+                    self.journal_error("service_error")
+                finally:
+                    if not self.response_started:
+                        self.respond({"error": "Internal relay error"}, 500)
 
         do_GET = do_POST = do_PUT = do_DELETE = do_OPTIONS = request
 

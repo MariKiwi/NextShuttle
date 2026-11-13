@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+  <id>nextshuttle</id>
+  <name>NextShuttle</name>
+  <summary>Private file shuttle and security events</summary>
+  <description>Development build: durable relay audit import and Nextcloud notifications. File transfer and scanning integration is not yet complete.</description>
+  <version>0.1.0</version>
+  <licence>agpl</licence>
+  <author>NextShuttle contributors</author>
+  <namespace>NextShuttle</namespace>
+  <category>files</category>
+  <bugs>https://github.com/MariKiwi/NextShuttle/issues</bugs>
+  <repository type="git">https://github.com/MariKiwi/NextShuttle.git</repository>
+  <dependencies><nextcloud min-version="35" max-version="35"/></dependencies>
+  <background-jobs><job>OCA\NextShuttle\BackgroundJob\PollEvents</job></background-jobs>
+  <commands>
+    <command>OCA\NextShuttle\Command\Configure</command>
+    <command>OCA\NextShuttle\Command\Owner</command>
+  </commands>
+  <settings><admin>OCA\NextShuttle\Settings\Admin</admin></settings>
+  <navigations><navigation><name>NextShuttle</name><route>nextshuttle.page.index</route><order>80</order></navigation></navigations>
+</info>

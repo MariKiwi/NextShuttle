@@ -152,6 +152,9 @@ Authorization headers never belong in URLs. All object IDs are validated hex.
 ## Release gates
 
 The initial relay is an independently tested foundation, not a complete product.
+The first notification app, durable audit feed and ClamAV/native-LMD adapters
+are implemented separately; live Nextcloud/antivirus integration remains to test.
+See [staging.md](staging.md) and [events-and-notifications.md](events-and-notifications.md).
 Before a deployable release: implement/test the browser and PHP crypto together,
 Nextcloud app authorization/settings/UI/jobs, private relay admin UI, real proxy
 prefix behavior, app package installation against 35.0.2, corruption/interruption

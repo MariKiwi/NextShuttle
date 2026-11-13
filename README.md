@@ -19,8 +19,11 @@ connection. Expiry is checked on access, independently of cleanup jobs.
 The initial relay implements bounded opaque-object storage, unique download
 credentials, password-protected upload inboxes, expiry, revocation, atomic
 download limits, persistent rate limiting, storage reservations and private
-management. The Nextcloud app and browser encryption integration are not yet
-implemented; the relay API deliberately accepts **ciphertext only** and must
+management and a durable audit journal. The initial Nextcloud app includes an
+event page, admin status and native notifications for admins and mapped owners.
+Private ClamAV/native-LMD scan adapters and a strict text-file test gate exist.
+File sharing, browser encryption and import integration remain unfinished;
+the relay API deliberately accepts **ciphertext only** and must
 not be exposed as a general plaintext file-sharing server.
 
 Run the security behavior tests with `python3 -m unittest discover -s tests -v`.
@@ -31,6 +34,9 @@ See [deployment.md](docs/deployment.md) before configuring the container.
 Before an end-to-end test deployment, uploads must pass private quarantine,
 authenticated decryption, strict content policy, **ClamAV and a second independent
 antivirus engine** before Nextcloud import. Scanner errors, stale definitions and
-uninspectable files must block import. This pipeline is not implemented yet;
+uninspectable files must block import. Adapters exist, but the complete
+quarantine/decryption/import pipeline is not yet integrated;
 see [upload-protection.md](docs/upload-protection.md) for requirements and tests.
-Only isolated relay API tests are currently appropriate.
+See [staging.md](docs/staging.md) for staged testing and remaining release gates,
+and [events-and-notifications.md](docs/events-and-notifications.md) for event
+audiences, offline replay, push prerequisites and delivery semantics.

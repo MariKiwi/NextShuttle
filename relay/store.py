@@ -19,8 +19,9 @@ HASH_SLOTS = threading.BoundedSemaphore(4)
 
 
 class Rejected(Exception):
-    def __init__(self, status=404, message="Transfer unavailable"):
+    def __init__(self, status=404, message="Transfer unavailable", audit_kind=None):
         self.status, self.message = status, message
+        self.audit_kind = audit_kind
 
 
 def digest(value):
@@ -66,6 +67,25 @@ class Store:
             CREATE TABLE IF NOT EXISTS rate_limits (
                 bucket TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);
             ''')
+            from relay import audit
+            audit.initialize(db)
+
+    def event(self, kind, ident=None, parent=None, severity="info", size=None, db=None):
+        from relay.audit import append
+        if db is not None:
+            return append(db, self.now(), kind, ident, parent, severity, size)
+        with self.tx() as connection:
+            return append(connection, self.now(), kind, ident, parent, severity, size)
+
+    def events(self, after=0, limit=100):
+        from relay.audit import read
+        with self.tx() as db:
+            return read(db, after, limit)
+
+    def acknowledge(self, through):
+        from relay.audit import acknowledge
+        with self.tx() as db:
+            return acknowledge(db, through)
 
     @contextmanager
     def tx(self):
@@ -136,6 +156,7 @@ class Store:
             self.available(db, size)
             db.execute("INSERT INTO downloads VALUES (?, ?, ?, ?, ?, 0, 'pending', ?)",
                        (ident, digest(token), size, expiry, uses, self.now()))
+            self.event("download_created", ident, size=size, db=db)
         return {"id": ident, "access_token": token, "expires": expiry}
 
     def create_inbox(self, data):
@@ -155,6 +176,7 @@ class Store:
             self.available(db, 0)
             db.execute("INSERT INTO inboxes VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0)",
                        (ident, salt, hashed, key, expiry, size, files))
+            self.event("inbox_created", ident, db=db)
         return {"id": ident, "expires": expiry}
 
     def reserve_upload(self, inbox, password, size):
@@ -168,9 +190,9 @@ class Store:
         try:
             hashed = password_hash(password, row["salt"])
         except Rejected:
-            raise Rejected()
+            raise Rejected(audit_kind="wrong_code")
         if not hmac.compare_digest(hashed, row["password"]):
-            raise Rejected()
+            raise Rejected(audit_kind="wrong_code")
         ident, token = secrets.token_hex(16), secrets.token_urlsafe(32)
         with self.tx() as db:
             current = db.execute("SELECT * FROM inboxes WHERE id=?", (inbox,)).fetchone()
@@ -184,6 +206,7 @@ class Store:
             expiry = min(current["expires"], self.now()+900)
             db.execute("INSERT INTO uploads VALUES (?, ?, ?, ?, ?, 'pending', ?)",
                        (ident, inbox, digest(token), size, expiry, self.now()))
+            self.event("upload_reserved", ident, inbox, size=size, db=db)
         return {"id": ident, "upload_token": token, "public_key": row["public_key"],
                 "expires": expiry, "bytes": size}
 
@@ -196,7 +219,7 @@ class Store:
             if not row or row["state"] != "pending" or row["expires"] <= self.now():
                 raise Rejected()
             if table == "uploads" and not hmac.compare_digest(digest(token or ""), row["credential"]):
-                raise Rejected()
+                raise Rejected(audit_kind="wrong_code")
             if type(length) is not int or length != row["bytes"]:
                 raise Rejected(400, "Ciphertext length does not match reservation")
             db.execute(f"UPDATE {table} SET state='writing' WHERE id=?", (ident,))
@@ -222,10 +245,14 @@ class Store:
                 os.replace(temporary, self.blob(ident))
                 expiry = self.now()+self.retention if table == "uploads" else current["expires"]
                 db.execute(f"UPDATE {table} SET state='ready', expires=? WHERE id=?", (expiry, ident))
+                self.event("download_ready" if table == "downloads" else "upload_received", ident,
+                           current["inbox"] if table == "uploads" else None, size=length, db=db)
         except BaseException:
             # Cleanup never releases reserved capacity until the disk object is gone.
             with self.tx() as db:
                 db.execute(f"UPDATE {table} SET state='failed' WHERE id=? AND state='writing'", (ident,))
+                self.event("upload_interrupted" if table == "uploads" else "service_error", ident,
+                           row["inbox"] if table == "uploads" else None, severity="warning", db=db)
             raise
         finally:
             temporary.unlink(missing_ok=True)
@@ -238,8 +265,9 @@ class Store:
             if not row or row["state"] != "ready" or row["expires"] <= self.now():
                 raise Rejected()
             if table == "downloads":
-                if (not hmac.compare_digest(digest(token or ""), row["credential"])
-                        or row["uses"] >= row["max_uses"]):
+                if not hmac.compare_digest(digest(token or ""), row["credential"]):
+                    raise Rejected(audit_kind="wrong_code")
+                if row["uses"] >= row["max_uses"]:
                     raise Rejected()
             try:
                 handle = self.blob(ident).open("rb")
@@ -247,6 +275,11 @@ class Store:
                 raise Rejected()
             if table == "downloads":
                 db.execute("UPDATE downloads SET uses=uses+1 WHERE id=?", (ident,))
+                try:
+                    self.event("download_claimed", ident, size=row["bytes"], db=db)
+                except BaseException:
+                    handle.close()
+                    raise
             return handle, row["bytes"]
 
     def revoke(self, kind, ident):
@@ -258,6 +291,11 @@ class Store:
                 db.execute("UPDATE uploads SET state='revoked' WHERE inbox=? AND state IN ('pending','writing')", (ident,))
             else:
                 db.execute(f"UPDATE {table} SET state='revoked' WHERE id=?", (ident,))
+            parent = None
+            if table == "uploads":
+                row = db.execute("SELECT inbox FROM uploads WHERE id=?", (ident,)).fetchone()
+                parent = row[0] if row else None
+            self.event("transfer_revoked", ident, parent, db=db)
 
     def rotate_password(self, ident, password):
         self.valid_id(ident)
@@ -270,6 +308,7 @@ class Store:
                 raise Rejected()
             # Previously issued upload capabilities are invalid after rotation.
             db.execute("UPDATE uploads SET state='revoked' WHERE inbox=? AND state IN ('pending','writing')", (ident,))
+            self.event("password_rotated", ident, db=db)
 
     def list(self, uploads_only=False):
         with self.tx() as db:
@@ -283,11 +322,13 @@ class Store:
         removed = 0
         with self.tx() as db:
             for table in ("downloads", "uploads"):
-                rows = db.execute(f'''SELECT id FROM {table} WHERE expires<=?
+                rows = db.execute(f'''SELECT * FROM {table} WHERE expires<=?
                     OR state IN ('revoked','failed')
                     OR (state IN ('pending','writing') AND created<=?)''', (self.now(), self.now()-900)).fetchall()
                 for row in rows:
                     ident = row["id"]
+                    if row["expires"] <= self.now():
+                        self.event("transfer_expired", ident, row["inbox"] if table == "uploads" else None, db=db)
                     self.blob(ident).unlink(missing_ok=True)
                     for part in self.root.glob(ident + ".*.part"):
                         part.unlink(missing_ok=True)
