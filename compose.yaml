@@ -1,0 +1,52 @@
+# Two isolated listener processes using the same image and persistent data.
+# Keep all published sockets on loopback. Route the existing proxy accordingly.
+# These are backend HTTP sockets; clients must reach them ONLY through HTTPS.
+services:
+  shuttle-public:
+    build: .
+    image: nextshuttle:development
+    command: ["--mode", "public", "--bind", "0.0.0.0", "--port", "8080"]
+    ports: ["127.0.0.1:9080:8080"]
+    environment: &environment
+      NEXTSHUTTLE_PUBLIC_URL: https://helios-public.tail43e437.ts.net/nextshuttle/
+      NEXTSHUTTLE_DATA: /data
+      NEXTSHUTTLE_SERVICE_TOKEN_FILE: /run/secrets/service_token
+      NEXTSHUTTLE_CAPACITY: "1073741824"
+      NEXTSHUTTLE_MAX_BLOB: "33554432"
+    volumes: ["shuttle-data:/data"]
+    networks: [public-backend]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1
+    ulimits:
+      nofile: {soft: 256, hard: 256}
+  shuttle-private:
+    image: nextshuttle:development
+    build: .
+    command: ["--mode", "private", "--bind", "0.0.0.0", "--port", "8081"]
+    ports: ["127.0.0.1:9081:8081"]
+    environment: *environment
+    volumes: ["shuttle-data:/data"]
+    secrets: [service_token]
+    networks: [private-backend]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1
+    ulimits:
+      nofile: {soft: 256, hard: 256}
+volumes:
+  shuttle-data:
+networks:
+  public-backend:
+  private-backend:
+secrets:
+  service_token:
+    file: ./secrets/service_token
