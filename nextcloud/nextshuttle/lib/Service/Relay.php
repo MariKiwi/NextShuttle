@@ -58,6 +58,7 @@ class Relay {
         $this->json($this->request('DELETE',$kind.'/'.self::id($id),[]));
     }
     public function scan(string $path,string $filename): array {
+        clearstatcache(true,$path);
         $size=filesize($path); $hash=hash_file('sha256',$path); $stream=fopen($path,'rb');
         if ($size<1||$size>FileCrypto::MAX_PLAIN||$stream===false) { throw new \RuntimeException('Invalid staging input'); }
         try {

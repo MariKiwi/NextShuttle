@@ -51,5 +51,25 @@ class ContentTests(unittest.TestCase):
             ('_rels/.rels',b'<Relationships><Relationship TargetMode="External" Target="https://evil.invalid"/></Relationships>')]))
         with self.assertRaises(Blocked):Content(self.root).inspect(path,'external.docx')
 
+    def test_direct_nested_pdf_actions_and_reserved_archive_paths_rejected(self):
+        import pikepdf
+        path=self.root/'nested.pdf'
+        with pikepdf.Pdf.new() as document:
+            page=document.add_blank_page()
+            page.obj.Annots=pikepdf.Array([pikepdf.Dictionary(Type=pikepdf.Name('/Annot'),Subtype=pikepdf.Name('/Link'),
+                Rect=pikepdf.Array([0,0,10,10]),A=pikepdf.Dictionary(S=pikepdf.Name('/JavaScript'),JS='app.alert(1)'))])
+            document.save(path)
+        with self.assertRaises(Blocked):Content(self.root).inspect(path,'nested.pdf')
+        path=self.file('reserved.zip',self.archive([('NUL/good.txt',b'ordinary')]))
+        with self.assertRaises(Blocked):Content(self.root).inspect(path,'reserved.zip')
+
+    def test_valid_minimal_office_package_and_trailing_archive_rejection(self):
+        entries=[('[Content_Types].xml',b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'),
+            ('_rels/.rels',b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="word/document.xml"/></Relationships>'),
+            ('word/document.xml',b'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>')]
+        path=self.file('valid.docx',self.archive(entries));self.assertEqual(len(Content(self.root).inspect(path,'valid.docx')),4)
+        path=self.file('trailing.zip',self.archive([('good.txt',b'ordinary')])+b'appended payload')
+        with self.assertRaises(Blocked):Content(self.root).inspect(path,'trailing.zip')
+
 
 if __name__=='__main__':unittest.main()

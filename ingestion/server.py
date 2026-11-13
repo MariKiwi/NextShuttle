@@ -12,17 +12,18 @@ import threading
 import time
 
 from ingestion.scanners import Blocked, Approval, Verdict, ClamAV, run_bounded
-from relay.server import BoundedServer
+from relay.server import BoundedServer,HardenedHandler
 
 
 def handler(root, token, gate_factory):
     slot = threading.BoundedSemaphore(1)
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(HardenedHandler):
         server_version = 'NextShuttle'
         sys_version = ''
         def setup(self):
             super().setup(); self.connection.settimeout(30)
         def log_message(self, *_): pass
+        def send_error(self,code,message=None,explain=None):self.reply(code,{'error':'Request rejected'})
         def reply(self, status, data):
             raw = json.dumps(data, separators=(',', ':')).encode()
             self.send_response(status)
@@ -76,7 +77,7 @@ def handler(root, token, gate_factory):
                 updated=datetime.strptime(match[3],'%a %b %d %H:%M:%S %Y').replace(tzinfo=timezone.utc).timestamp()
                 if not -3600<=time.time()-updated<=48*3600:raise ValueError()
                 ages=[]
-                for name in ('maldet.sigs.ver','md5v2.dat','hex.dat'):
+                for name in ('maldet.sigs.ver','md5v2.dat','sha256v2.dat','hex.dat'):
                     metadata=(Path('/usr/local/maldetect/sigs')/name).stat();age=time.time()-metadata.st_mtime
                     if not metadata.st_size or not -3600<=age<=48*3600:raise ValueError()
                     ages.append(int(age))
@@ -90,6 +91,8 @@ def main():
     token=Path(os.environ.get('NEXTSHUTTLE_SCANNER_TOKEN_FILE','/run/secrets/scanner_token')).read_text().strip()
     if not re.fullmatch(r'[A-Za-z0-9_-]{43,256}',token):raise SystemExit('Invalid scanner credential')
     root=Path(os.environ.get('NEXTSHUTTLE_QUARANTINE','/quarantine'));root.mkdir(exist_ok=True)
+    state=Path('/usr/local/maldetect/pub/shuttle')
+    for folder in ('tmp','sess','quar'):(state/folder).mkdir(parents=True,exist_ok=True,mode=0o700)
     class ProcessGate:
         def __init__(self,work):self.work=work
         def check(self,path,name):

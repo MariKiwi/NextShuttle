@@ -186,7 +186,7 @@ class Shuttle {
             $in=fopen($plain,'rb'); $out=fopen($cipher,'wb');
             try { $key=FileCrypto::encrypt($in,$out,$row['label'],$size); } finally { fclose($in); fclose($out); }
             $secret['key']=sodium_bin2base64($key,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
-            $options['cipher_bytes']=filesize($cipher); $options['scan']=$receipt;
+            clearstatcache(true,$cipher);$options['cipher_bytes']=filesize($cipher); $options['scan']=$receipt;
             $this->transfers->update($id,['secret'=>$secret,'options'=>$options]);
             $this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>$secret['password']??null,'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
             $in=fopen($cipher,'rb'); try { $this->relay->put($id,$in,$options['cipher_bytes']); } finally { fclose($in); }

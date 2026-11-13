@@ -24,9 +24,9 @@ class ScannerTests(unittest.TestCase):
         self.now = int(time.time())
         self.sigs = self.root / "sigs"
         self.sigs.mkdir()
-        for name in ("maldet.sigs.ver", "md5v2.dat", "hex.dat"):
+        for name in ("maldet.sigs.ver", "md5v2.dat", "sha256v2.dat", "hex.dat"):
             (self.sigs / name).write_text("20261113")
-        self.report = {"schema_version": "1.2", "scanner": {"engine": "native", "version": "2.0.1", "sig_version": "20261113"},
+        self.report = {"schema_version": "1.2", "scanner": {"engine": "native", "hash_type": "both", "version": "2.0.1", "sig_version": "20261113"},
             "reports": [{"scan_id": "261113-1200.1234", "path": str(self.file), "total_files": 1,
             "total_hits": 0, "total_cleaned": 0, "total_quarantined": 0, "started_epoch": self.now, "completed_epoch": self.now}]}
 

@@ -14,6 +14,7 @@ def request(data):
     except HTTPError as e:return e.code,json.load(e)
 
 ready=False
+data={}
 for attempt in range(60):
     try:
         code,data=request(b'ordinary live scanner probe\n')
@@ -22,7 +23,7 @@ for attempt in range(60):
             ready=True;break
     except (URLError,TimeoutError,ConnectionError):pass
     time.sleep(10)
-if not ready:raise RuntimeError('Actual scanner/signature readiness did not pass')
+if not ready:raise RuntimeError('Actual scanner/signature readiness did not pass: '+repr(data))
 sample=base64.b64decode('WDVPIVAlQEFQWzRcUFpYNTQoUF4pN0NDKTd9JEVJQ0FSLVNUQU5EQVJELUFOVElWSVJVUy1URVNULUZJTEUhJEgrSCo=')
 code,data=request(sample)
 assert code==422 and data.get('reason')=='malware_detected',data

@@ -12,9 +12,27 @@ import re
 import signal
 import threading
 from urllib.parse import urlsplit
+import http.client
 
 from relay.store import Rejected, Store
 
+
+class HardenedHandler(BaseHTTPRequestHandler):
+    def parse_request(self):
+        if len(self.raw_requestline)>4096:
+            self.send_error(414);return False
+        original=self.rfile
+        class HeadersOnly:
+            def __init__(inner):inner.used=0
+            def readline(inner,size=-1):
+                remaining=8192-inner.used
+                line=original.readline(min(size if size>=0 else remaining+1,remaining+1))
+                inner.used+=len(line)
+                if inner.used>8192:raise http.client.LineTooLong('header section')
+                return line
+        self.rfile=HeadersOnly()
+        try:return super().parse_request()
+        finally:self.rfile=original
 
 class BoundedServer(HTTPServer):
     allow_reuse_address = True
@@ -46,12 +64,12 @@ class BoundedServer(HTTPServer):
         self.pool.shutdown(wait=True)
 
 
-def handler(store, mode, service_token, public_url, admin_password=None):
+def handler(store, mode, service_token, public_url, admin_password=None,private_origin='https://shuttle.helios.lan'):
     origin = urlsplit(public_url)
     public_origin = f"{origin.scheme}://{origin.netloc}"
     prefix = origin.path.rstrip("/") + "/api/v1/" if mode == "public" else "/api/v1/"
 
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(HardenedHandler):
         server_version = "NextShuttle"
         sys_version = ""
         protocol_version = "HTTP/1.0"
@@ -123,7 +141,7 @@ def handler(store, mode, service_token, public_url, admin_password=None):
                 if path=='/admin/api/state':
                     with store.tx() as db:high=db.execute('SELECT coalesce(max(sequence),0) FROM audit_events').fetchone()[0]
                     return self.respond({'transfers':store.list(),'audit':store.events(max(0,high-100)),'capacity':store.capacity,'max_blob':store.max_blob})
-            if self.command!='POST' or self.headers.get('Origin')!='https://shuttle.helios.lan':raise Rejected(403,'Private origin required')
+            if self.command!='POST' or self.headers.get('Origin')!=private_origin:raise Rejected(403,'Private origin required')
             token=self.headers.get('X-NextShuttle-CSRF','')
             if not any(hmac.compare_digest(token,self.csrf(bucket)) for bucket in (store.now()//3600,store.now()//3600-1)):raise Rejected(403,'Reload the administration page')
             data=self.body()
@@ -354,7 +372,8 @@ def main():
 
     def cleanup():
         while not stopped.wait(60):
-            store.cleanup()
+            try:store.cleanup()
+            except Exception:print('NextShuttle cleanup unavailable; retrying',flush=True)
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)

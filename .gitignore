@@ -12,3 +12,5 @@ relay/static/public.js
 nextcloud/nextshuttle/js/
 *.tar.gz
 ci-state/
+test-results/
+playwright-report/

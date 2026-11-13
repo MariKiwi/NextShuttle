@@ -161,12 +161,12 @@ class LMD:
         # Each adapter call gets the exact scan ID, never a shared 'newest' report.
         started = int(self.clock())
         try:
-            for filename in ("maldet.sigs.ver", "md5v2.dat", "hex.dat"):
+            for filename in ("maldet.sigs.ver", "md5v2.dat", "sha256v2.dat", "hex.dat"):
                 metadata = (self.signatures / filename).stat()
                 if not metadata.st_size or not -3600 <= self.clock()-metadata.st_mtime <= self.max_age:
                     raise Blocked("stale_or_missing_signatures", self.name)
             signature_version = (self.signatures / "maldet.sigs.ver").read_text().strip()
-            options = "scan_user_access=1,scan_clamscan=0,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
+            options = "scan_user_access=1,scan_clamscan=0,scan_hashtype=both,scan_yara=0,scan_min_filesize=0,scan_max_filesize=32768k,scan_hexdepth=33554432,scan_ignore_root=0,scan_ignore_user=,scan_ignore_group=,quarantine_hits=0,quarantine_clean=0,quarantine_suspend_user=0,email_alert=0,slack_alert=0,telegram_alert=0,discord_alert=0,enable_statistic=0,autoupdate_signatures=0,autoupdate_version=0,post_scan_hook_exec="
             code, output = self.runner([self.executable, "--config-option", options, "--scan-all", str(path)], self.timeout)
             if code == 2:
                 raise Blocked("malware_detected", self.name)
@@ -185,6 +185,7 @@ class LMD:
             if report.get("total_hits", 0) != 0:
                 raise Blocked("malware_detected", self.name)
             if (scanner.get("engine") != "native" or scanner.get("version") != "2.0.1"
+                or scanner.get("hash_type") != "both"
                 or scanner.get("sig_version") != signature_version
                 or report.get("scan_id") != ids[0] or report.get("path") != str(path)
                 or type(report.get("total_files")) is not int or report["total_files"] != 1
