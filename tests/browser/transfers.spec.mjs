@@ -1,7 +1,9 @@
 import {test,expect} from '@playwright/test';
+import {protect} from '../../web/protection.mjs';
 import {readFile} from 'node:fs/promises';
 import {encrypt,decrypt,ready,b64} from '../../web/crypto.mjs';
 const sodium=await ready(),privateURL='https://localhost:9085/api/v1/';
+test.beforeEach(async({request})=>{expect((await request.post('https://localhost:9085/__fixture/reset-rate-budget',{headers:{Authorization:'Bearer '+'r'.repeat(64)},data:{}})).ok()).toBeTruthy();});
 async function privatePost(request,path,data){const r=await request.post(privateURL+path,{headers:{Authorization:'Bearer '+'r'.repeat(64)},data});expect(r.ok()).toBeTruthy();return r.json();}
 test('protected download decrypts in a real browser under CSP',async({page,request})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -42,4 +44,29 @@ test('private admin authentication, CSRF and audit export work in-browser',async
  const text=(await readFile(await download.path())).toString();expect(text).toContain('admin_page_accessed');expect(text).not.toContain(t.access_token);expect(text).not.toContain('r'.repeat(64));
  await page.getByRole('button',{name:'Sign out',exact:true}).click();await expect(page.getByLabel('Administrator password')).toBeVisible();
  await context.close();
+});
+
+test('v2 public downloads accept separate code/key and keep the password local',async({page,request})=>{
+ const password='a separate local encryption password',id=sodium.to_hex(sodium.randombytes_buf(16)),token=b64(sodium.randombytes_buf(32)),seed=sodium.randombytes_buf(32),salt=b64(sodium.randombytes_buf(16));
+ const code=`D2.${id}.${token}.${b64(seed)}.${salt}`,protection=await protect(code,password),encrypted=await encrypt(new File(['password protected browser content'],'protected.txt'),null,protection);
+ await privatePost(request,'downloads',{id,access_token:token,bytes:encrypted.blob.size,ttl:3600,password:protection.authorization});
+ expect((await request.put(privateURL+`downloads/${id}/blob`,{headers:{Authorization:'Bearer '+'r'.repeat(64)},data:Buffer.from(await encrypted.blob.arrayBuffer())})).ok()).toBeTruthy();
+ const sent=[];page.on('request',r=>{if(r.url().includes('/api/'))sent.push(r.postData()||'');});
+ await page.goto('/nextshuttle/');await page.getByLabel('Transfer code').fill(`D2.${id}.${token}.${salt}`);
+ await page.getByLabel('Encryption key',{exact:false}).fill(b64(seed));await page.getByLabel('Password',{exact:false}).fill('an incorrect long password');
+ await page.getByRole('button',{name:'Decrypt and download'}).click();await expect(page.getByRole('status')).toContainText('Code invalid');
+ await page.getByLabel('Password',{exact:false}).fill(password);const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Decrypt and download'}).click();
+ const download=await waiting;expect((await readFile(await download.path())).toString()).toBe('password protected browser content');
+ expect(sent.join(' ')).not.toContain(password);expect(sent.join(' ')).not.toContain(b64(seed));
+});
+test('v2 public uploads are encrypted with password and inbox key',async({page,request})=>{
+ const box=sodium.crypto_box_keypair(),id=sodium.to_hex(sodium.randombytes_buf(16)),salt=b64(sodium.randombytes_buf(16)),password='a password protected browser inbox',code=`U2.${id}.${b64(box.publicKey)}.${salt}`,protection=await protect(code,password);
+ await privatePost(request,'inboxes',{id,password:protection.authorization,ttl:3600,max_files:3,max_bytes:1048576,public_key:sodium.to_base64(box.publicKey,sodium.base64_variants.ORIGINAL)});
+ const sent=[];page.on('request',r=>{if(r.url().includes('/api/')&&r.method()==='POST')sent.push(r.postData()||'');});
+ await page.goto('/nextshuttle/#'+code);await page.getByLabel('Password',{exact:false}).fill(password);await page.getByLabel('File',{exact:true}).setInputFiles({name:'protected.txt',mimeType:'text/plain',buffer:Buffer.from('private password protected upload')});
+ await page.getByRole('button',{name:'Encrypt and upload'}).click();await expect(page.getByRole('status')).toContainText('Encrypted upload received');
+ expect(sent.join(' ')).not.toContain(password);
+ const response=await request.get(privateURL+'uploads',{headers:{Authorization:'Bearer '+'r'.repeat(64)}}),upload=(await response.json()).find(r=>r.inbox===id);
+ const fetched=await request.get(privateURL+`uploads/${upload.id}/blob`,{headers:{Authorization:'Bearer '+'r'.repeat(64)}}),data=new Uint8Array(await fetched.body());
+ expect(await (await decrypt(data,null,box,protection)).blob.text()).toBe('private password protected upload');
 });

@@ -20,7 +20,7 @@ declare(strict_types=1);
     <?php endforeach; ?>
         <label>Eligible group IDs (comma separated; empty allows all eligible Nextcloud users)<input name="groups" value="<?php p(implode(',',$_['policy']['groups'])); ?>"></label>
         <label>Allowed file extensions (comma separated)<input name="types" value="<?php p(implode(',',$_['policy']['types'])); ?>" required></label>
-        <label><input type="checkbox" name="require_download_password" <?php if ($_['policy']['require_download_password']) { print_unescaped('checked'); } ?>> Require a separate download password (Nextcloud's own enforcement also applies)</label>
+        <label><input type="checkbox" name="require_download_password" checked disabled> Encryption passwords are mandatory for new shares</label>
         <label>New relay credential (leave blank to retain)<input name="serviceToken" type="password" autocomplete="new-password"></label>
         <label>New private scanner credential (leave blank to retain)<input name="scannerToken" type="password" autocomplete="new-password"></label>
         <p>Both scanners are mandatory. Scanning cannot be bypassed. Existing transfers are rechecked on the next background run.</p>

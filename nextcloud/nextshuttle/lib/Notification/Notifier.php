@@ -19,8 +19,15 @@ class Notifier implements INotifier {
         if ($notification->getApp() !== 'nextshuttle' || $notification->getSubject() !== 'security_event'
             || !isset(EventCatalog::LABELS[$kind])) { throw new UnknownNotificationException(); }
         $l = $this->l10n->get('nextshuttle', $languageCode);
+        $message=$l->t('Open NextShuttle for the event record. Event %s.',[$notification->getObjectId()]);
+        if (is_string($parameters['client_ip']??null)&&filter_var($parameters['client_ip'],FILTER_VALIDATE_IP)!==false) {
+            $country=$parameters['country']??null;
+            $name=is_string($country)&&preg_match('/^[A-Z]{2}$/D',$country)?(class_exists('Locale')?\Locale::getDisplayRegion('und_'.$country,$languageCode):$country):$l->t('Unknown');
+            $message=$l->t('IP: %s · Estimated country: %s.',[$parameters['client_ip'],$name]).' '.$message;
+            if (($parameters['ip_source']??null)==='peer') { $message.=' '.$l->t('Address observed directly; proxy forwarding is not verified.'); }
+        }
         $notification->setParsedSubject('NextShuttle: ' . $l->t(EventCatalog::LABELS[$kind]))
-            ->setParsedMessage($l->t('Open NextShuttle for the event record. Event %s.', [$notification->getObjectId()]))
+            ->setParsedMessage($message)
             ->setLink($this->urls->linkToRouteAbsolute('nextshuttle.page.index'))
             ->setIcon($this->urls->getAbsoluteURL($this->urls->imagePath('nextshuttle', 'app.svg')));
         return $notification;

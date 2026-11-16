@@ -41,14 +41,15 @@ class Shuttle {
                 $this->policy->file($node->getName(),$size);
                 $secret=['token'=>sodium_bin2base64(random_bytes(32),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
                 $password=$data['password']??'';
-                if (!is_string($password)||($p['require_download_password']&&mb_strlen($password)<$p['min_password'])||($password!==''&&(mb_strlen($password)<$p['min_password']||mb_strlen($password)>256))) { throw new \InvalidArgumentException('A separate strong download password is required'); }
-                if ($password!=='') { $secret['password']=$password; }
+                if (!is_string($password)||($p['require_download_password']&&mb_strlen($password)<$p['min_password'])||(mb_strlen($password)<$p['min_password']||mb_strlen($password)>256)) { throw new \InvalidArgumentException('A separate strong download password is required'); }
+                $secret+=['password'=>$password,'crypto'=>2,'key'=>sodium_bin2base64(random_bytes(32),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),'salt'=>sodium_bin2base64(random_bytes(16),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
                 $options+=['size'=>$size,'etag'=>$node->getEtag()];
             } else {
                 $password=$data['password']??'';
                 if (!is_string($password)||!preg_match('//u',$password)||mb_strlen($password)<$p['min_password']||mb_strlen($password)>256) { throw new \InvalidArgumentException('Inbox password is shorter than policy allows'); }
                 $pair=sodium_crypto_box_keypair();
                 $secret=['pair'=>base64_encode($pair),'public'=>sodium_bin2base64(sodium_crypto_box_publickey($pair),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),'password'=>$password];
+                $secret['crypto']=2;$secret['salt']=sodium_bin2base64(random_bytes(16),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);$secret['passwords']=[$secret['salt']=>$password];
                 $options['password_length']=mb_strlen($password);
             }
             $this->events->mapOwner($id,$uid); // Before the relay can generate an event.
@@ -82,8 +83,17 @@ class Shuttle {
         $this->locked($id,function() use ($uid,$id,$password): void {
             $row=$this->transfers->get($id,$uid); $this->policy->user($uid);
             if ($row['kind']!=='inbox'||$row['state']!=='ready'||mb_strlen($password)<$this->policy->get()['min_password']||mb_strlen($password)>256) { throw new \InvalidArgumentException('Invalid inbox password change'); }
-            $this->relay->call('inboxes/'.$id.'/password',['password'=>$password]);
-            $options=$row['options'];$options['password_length']=mb_strlen($password);$this->transfers->update($id,['options'=>$options]);
+            $secret=$row['secret'];$authorization=$password;
+            if (($secret['crypto']??1)>=2) {
+                if (count($secret['passwords'])>=32) { throw new \InvalidArgumentException('Create a new inbox after 32 password versions'); }
+                $secret['salt']=sodium_bin2base64(random_bytes(16),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);$secret['password']=$password;$secret['passwords'][$secret['salt']]=$password;
+                $pending=$row;$pending['secret']=$secret;$authorization=Protection::authorization(Protection::binding($pending),$password);
+            }
+            if (($secret['crypto']??1)<2) { $this->relay->call('inboxes/'.$id.'/password',['password'=>$password]);$options=$row['options'];$options['password_length']=mb_strlen($password);$this->transfers->update($id,['options'=>$options]);return; }
+            // Keep the previous key versions for uploads already received before rotation.
+            $this->transfers->update($id,['secret'=>$secret,'state'=>'rotating']);
+            $this->relay->call('inboxes/'.$id.'/password',['password'=>$authorization]);
+            $options=$row['options'];$options['password_length']=mb_strlen($password);$this->transfers->update($id,['secret'=>$secret,'options'=>$options,'state'=>'ready']);
         });
     }
     public function synchronize(): void {
@@ -128,6 +138,7 @@ class Shuttle {
     private function process(array $row): void {
         $id=$row['id'];
         try {
+            if ($row['state']==='rotating') { $this->relay->call('inboxes/'.$id.'/password',['password'=>Protection::authorization(Protection::binding($row),$row['secret']['password'])]);$options=$row['options'];$options['password_length']=mb_strlen($row['secret']['password']);$this->transfers->update($id,['state'=>'ready','options'=>$options]);return; }
             if ($row['state']==='revoking') { $this->relay->revoke($row['kind']==='download'?'downloads':'inboxes',$id); $this->transfers->update($id,['state'=>'revoked']); return; }
             if ($row['expires']<=time()) { $this->transfers->update($id,['state'=>'expired']); return; }
             try {
@@ -147,10 +158,10 @@ class Shuttle {
             if ($row['state']==='ready') { return; }
             $this->transfers->update($id,['state'=>'preparing']);
             if ($row['kind']==='inbox') {
-                $this->relay->call('inboxes',['id'=>$id,'expires'=>$row['expires'],'password'=>$row['secret']['password'],
+                $this->relay->call('inboxes',['id'=>$id,'expires'=>$row['expires'],'password'=>($row['secret']['crypto']??1)>=2?Protection::authorization(Protection::binding($row),$row['secret']['password']):$row['secret']['password'],
                     'public_key'=>base64_encode(sodium_base642bin($row['secret']['public'],SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)),
                     'max_bytes'=>$row['options']['max_bytes'],'max_files'=>$row['options']['max_files']]);
-                $secret=$row['secret']; unset($secret['password']);
+                $secret=$row['secret']; if (($secret['crypto']??1)<2) { unset($secret['password']); }
                 $this->transfers->update($id,['state'=>'ready','secret'=>$secret]); return;
             }
             $this->prepareDownload($row);
@@ -159,7 +170,7 @@ class Shuttle {
             $this->transfers->update($id,['state'=>'rejected']);
         } catch (\Throwable $e) {
             $attempt=$row['attempts']+1;
-            $state=$this->transfers->get($id)['state']==='revoking'?'revoking':'retry';
+            $current=$this->transfers->get($id)['state'];$state=in_array($current,['revoking','rotating'],true)?$current:'retry';
             $this->transfers->update($id,['state'=>$state,'attempts'=>$attempt,'retry_after'=>time()+min(3600,30*(2**min(7,$attempt)))]);
             if ($attempt===1) { try { $this->report('scan_unavailable',$id); } catch (\Throwable $ignored) {} }
         }
@@ -167,7 +178,7 @@ class Shuttle {
     private function prepareDownload(array $row): void {
         $id=$row['id']; $secret=$row['secret']; $options=$row['options'];
         if (isset($options['cipher_bytes'],$secret['key'])) {
-            $existing=$this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>$secret['password']??null,'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
+            $existing=$this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>($secret['crypto']??1)>=2?Protection::authorization(Protection::binding($row),$secret['password']):($secret['password']??null),'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
             if (($existing['state']??'')==='ready') { $this->transfers->update($id,['state'=>'ready']); return; }
             if (($existing['state']??'')==='writing') { throw new \RuntimeException('Snapshot transfer still finishing'); }
             if (($existing['state']??'')==='failed') { $this->relay->call('downloads/'.$id.'/reset',[]); }
@@ -184,18 +195,18 @@ class Shuttle {
             $this->policy->file($row['label'],$size); $receipt=$this->relay->scan($plain,$row['label']);
             $this->report('scan_clean',$id);
             $in=fopen($plain,'rb'); $out=fopen($cipher,'wb');
-            try { $key=FileCrypto::encrypt($in,$out,$row['label'],$size); } finally { fclose($in); fclose($out); }
-            $secret['key']=sodium_bin2base64($key,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
+            try { $key=FileCrypto::encrypt($in,$out,$row['label'],$size,null,($secret['crypto']??1)>=2?['binding'=>Protection::binding($row),'password'=>$secret['password']]:null); } finally { fclose($in); fclose($out); }
+            if (($secret['crypto']??1)<2) { $secret['key']=sodium_bin2base64($key,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING); }sodium_memzero($key);
             clearstatcache(true,$cipher);$options['cipher_bytes']=filesize($cipher); $options['scan']=$receipt;
             $this->transfers->update($id,['secret'=>$secret,'options'=>$options]);
-            $this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>$secret['password']??null,'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
+            $this->relay->call('downloads',['id'=>$id,'access_token'=>$secret['token'],'password'=>($secret['crypto']??1)>=2?Protection::authorization(Protection::binding($row),$secret['password']):($secret['password']??null),'expires'=>$row['expires'],'bytes'=>$options['cipher_bytes'],'max_uses'=>$options['max_uses']]);
             $in=fopen($cipher,'rb'); try { $this->relay->put($id,$in,$options['cipher_bytes']); } finally { if (is_resource($in)) { fclose($in); } }
             $this->transfers->update($id,['state'=>'ready']);
         } finally { @unlink($plain); @unlink($cipher); }
     }
     private function import(array $upload): void {
         $id=Relay::id($upload['id']); $inbox=$this->transfers->get(Relay::id($upload['inbox']));
-        if ($inbox['kind']!=='inbox'||!in_array($inbox['state'],['ready','expired'],true)) { return; }
+        if ($inbox['kind']!=='inbox'||!in_array($inbox['state'],['ready','expired','rotating'],true)) { return; }
         $folder=$this->node($inbox['owner_uid'],$inbox['node_id'],'inbox');
         $old=$this->transfers->receipt($id);
         if (in_array($old['state']??'',['stored','done'],true)) {
@@ -206,7 +217,7 @@ class Shuttle {
         try {
             $out=fopen($cipher,'wb'); try { $this->relay->fetch($id,$out,(int)($upload['bytes']??0)); } finally { fclose($out); }
             $in=fopen($cipher,'rb'); $out=fopen($plain,'wb');
-            try { $meta=FileCrypto::decrypt($in,$out,null,base64_decode($inbox['secret']['pair'],true)); }
+            try { $meta=FileCrypto::decrypt($in,$out,null,base64_decode($inbox['secret']['pair'],true),($inbox['secret']['crypto']??1)>=2?['id'=>$inbox['id'],'passwords'=>$inbox['secret']['passwords']]:null); }
             catch (\UnexpectedValueException|\SodiumException|\JsonException $e) { throw new ScanRejected('content_rejected'); }
             finally { fclose($in); fclose($out); }
             $phase='scan';$this->policy->file($meta['name'],$meta['size']); $receipt=$this->relay->scan($plain,$meta['name']); $this->report('scan_clean',$id,$inbox['id']);

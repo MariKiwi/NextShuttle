@@ -29,13 +29,16 @@ class FileCrypto {
         $raw = pack('N', strlen($cipher)) . $cipher;
         if (fwrite($out, $raw) !== strlen($raw)) { throw new \RuntimeException('Staging disk write failed'); }
     }
-    public static function encrypt($in, $out, string $name, int $size, ?string $boxPublic = null): string {
+    public static function encrypt($in, $out, string $name, int $size, ?string $boxPublic = null, #[\SensitiveParameter] ?array $protection = null): string {
         self::safeName($name);
         if ($size < 1 || $size > self::MAX_PLAIN) { throw new \UnexpectedValueException('Invalid file size'); }
         $key = sodium_crypto_secretstream_xchacha20poly1305_keygen();
+        $seed=$key;
+        if ($protection!==null) { $key=Protection::key($protection['binding'],$protection['password'],$boxPublic===null?null:$seed); }
         [$state, $header] = sodium_crypto_secretstream_xchacha20poly1305_init_push($key);
-        $prefix = $boxPublic === null ? 'NSH1D' : 'NSH1U';
-        fwrite($out, $prefix . ($boxPublic === null ? '' : sodium_crypto_box_seal($key, $boxPublic)) . $header);
+        $prefix = $protection===null?($boxPublic===null?'NSH1D':'NSH1U'):($boxPublic===null?'NSH2D':'NSH2U');
+        $parts=$protection===null?[]:explode('.',$protection['binding']);
+        fwrite($out,$prefix.($protection===null?'':sodium_base642bin(end($parts),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)).($boxPublic===null?'':sodium_crypto_box_seal($seed,$boxPublic)).$header);
         $meta = json_encode(['name' => $name, 'size' => $size], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         self::frame($out, $state, $meta, $prefix, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE);
         $read = 0;
@@ -51,13 +54,26 @@ class FileCrypto {
         self::frame($out, $state, '', $prefix, SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_FINAL);
         return $key;
     }
-    public static function decrypt($in, $out, ?string $key = null, ?string $boxKeypair = null): array {
+    public static function decrypt($in, $out, ?string $key = null, ?string $boxKeypair = null, #[\SensitiveParameter] ?array $protection = null): array {
         $prefix = self::exact($in, 5);
-        if (!in_array($prefix, ['NSH1D', 'NSH1U'], true)) { throw new \UnexpectedValueException('Unsupported encrypted format'); }
-        if ($prefix === 'NSH1U') {
+        if ($protection!==null&&$prefix!==(isset($protection['id'])?'NSH2U':'NSH2D')) { throw new \UnexpectedValueException('Protected encryption format required'); }
+        if (!in_array($prefix, ['NSH1D', 'NSH1U','NSH2D','NSH2U'], true)) { throw new \UnexpectedValueException('Unsupported encrypted format'); }
+        $binding=null;$password=null;
+        if (str_starts_with($prefix,'NSH2')) {
+            $salt=sodium_bin2base64(self::exact($in,16),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
+            if ($protection===null) { throw new \UnexpectedValueException('Encryption password required'); }
+            if ($prefix==='NSH2U') {
+                $password=$protection['passwords'][$salt]??null;
+                if ($password===null||$boxKeypair===null) { throw new \UnexpectedValueException('Unknown upload encryption version'); }
+                $binding='U2.'.$protection['id'].'.'.sodium_bin2base64(sodium_crypto_box_publickey($boxKeypair),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING).'.'.$salt;
+            } else { $binding=$protection['binding'];$password=$protection['password'];if (!str_ends_with($binding,'.'.$salt)) { throw new \UnexpectedValueException('Encryption salt mismatch'); } }
+        }
+        if ($prefix === 'NSH1U'||$prefix==='NSH2U') {
             if ($boxKeypair === null) { throw new \UnexpectedValueException('Inbox key required'); }
             $key = sodium_crypto_box_seal_open(self::exact($in, 80), $boxKeypair);
+            if (!is_string($key)) { throw new \UnexpectedValueException('Sealed file key authentication failed'); }
         }
+        if ($binding!==null) { $key=Protection::key($binding,$password,$prefix==='NSH2U'?$key:null); }
         if (!is_string($key) || strlen($key) !== 32) { throw new \UnexpectedValueException('Invalid file key'); }
         $state = sodium_crypto_secretstream_xchacha20poly1305_init_pull(self::exact($in, 24), $key);
         $pull = static function () use ($in, &$state, $prefix): array {

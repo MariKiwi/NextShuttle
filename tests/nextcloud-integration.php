@@ -28,7 +28,7 @@ $shuttle=$server->get(\OCA\NextShuttle\Service\Shuttle::class);
 $transfers=$server->get(\OCA\NextShuttle\Service\Transfers::class);
 $events=$server->get(\OCA\NextShuttle\Service\Events::class);
 $file=$folder->newFile('outgoing.txt','ordinary outgoing CI content');
-$download=$shuttle->create('alice','download',(int)$file->getId(),['ttl'=>3600]);
+$download=$shuttle->create('alice','download',(int)$file->getId(),['ttl'=>3600,'password'=>'a long download encryption password']);
 check(!isset($download['secret']),'Public row exposed secret storage');
 work();$ready=$transfers->get($download['id'],'alice');
 check($ready['state']==='ready','Outgoing transfer did not become ready: '.$ready['state']);
@@ -38,23 +38,33 @@ function publicRequest(string $method,string $path,string $body,array $headers=[
         'method'=>$method,'content'=>$body,'header'=>implode("\r\n",array_merge($headers,['Content-Length: '.strlen($body)])),'ignore_errors'=>false,'timeout'=>30]]));
     if ($raw===false) { throw new RuntimeException('Public API request failed'); } return $raw;
 }
-$cipher=publicRequest('POST','downloads/'.$ready['id'].'/fetch','',['Authorization: Bearer '.$ready['secret']['token']]);
+$binding=\OCA\NextShuttle\Service\Protection::binding($ready);
+$proof=\OCA\NextShuttle\Service\Protection::authorization($binding,$ready['secret']['password']);
+$cipher=publicRequest('POST','downloads/'.$ready['id'].'/fetch',json_encode(['password'=>$proof]),['Authorization: Bearer '.$ready['secret']['token'],'Content-Type: application/json']);
 $in=tmpfile();$out=tmpfile();fwrite($in,$cipher);rewind($in);
-$meta=\OCA\NextShuttle\Service\FileCrypto::decrypt($in,$out,sodium_base642bin($ready['secret']['key'],SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING));
+$meta=\OCA\NextShuttle\Service\FileCrypto::decrypt($in,$out,sodium_base642bin($ready['secret']['key'],SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),null,['binding'=>$binding,'password'=>$ready['secret']['password']]);
 rewind($out);check(stream_get_contents($out)==='ordinary outgoing CI content','Public download did not decrypt');fclose($in);fclose($out);
 $destination=$folder->newFolder('Received');
 $inbox=$shuttle->create('alice','inbox',(int)$destination->getId(),['ttl'=>3600,'password'=>'a long static ci password','max_files'=>5,'max_bytes'=>1048576]);
 work();$inboxRow=$transfers->get($inbox['id'],'alice');check($inboxRow['state']==='ready','Inbox not ready');
 function uploadFixture(array $inbox,string $content,string $name): string {
     $in=tmpfile();$out=tmpfile();fwrite($in,$content);rewind($in);
-    \OCA\NextShuttle\Service\FileCrypto::encrypt($in,$out,$name,strlen($content),sodium_base642bin($inbox['secret']['public'],SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING));
+    \OCA\NextShuttle\Service\FileCrypto::encrypt($in,$out,$name,strlen($content),sodium_base642bin($inbox['secret']['public'],SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),['binding'=>\OCA\NextShuttle\Service\Protection::binding($inbox),'password'=>$inbox['secret']['password']]);
     rewind($out);$blob=stream_get_contents($out);fclose($in);fclose($out);
-    $reservation=json_decode(publicRequest('POST','inboxes/'.$inbox['id'].'/uploads',json_encode(['password'=>'a long static ci password','bytes'=>strlen($blob)]),['Content-Type: application/json']),true,16,JSON_THROW_ON_ERROR);
+    $reservation=json_decode(publicRequest('POST','inboxes/'.$inbox['id'].'/uploads',json_encode(['password'=>\OCA\NextShuttle\Service\Protection::authorization(\OCA\NextShuttle\Service\Protection::binding($inbox),$inbox['secret']['password']),'bytes'=>strlen($blob)]),['Content-Type: application/json']),true,16,JSON_THROW_ON_ERROR);
     publicRequest('PUT','uploads/'.$reservation['id'].'/blob',$blob,['Authorization: Bearer '.$reservation['upload_token'],'Content-Type: application/octet-stream']);return $reservation['id'];
 }
 $upload=uploadFixture($inboxRow,'ordinary incoming CI content','incoming.txt');
 work();$receipt=$transfers->receipt($upload);check($receipt!==null&&$receipt['state']==='done','Upload was not imported: '.json_encode($receipt).' destination_count='.count($destination->getDirectoryListing()));
 $imported=$destination->get($receipt['name']);check($imported->getContent()==='ordinary incoming CI content','Imported bytes differ');
+$older=uploadFixture($inboxRow,'received before password rotation','older.txt');
+$shuttle->rotate('alice',$inbox['id'],'a new strong inbox encryption password');work();
+check($transfers->receipt($older)['state']==='done','Password rotation lost a received upload');
+$rotated=$transfers->get($inbox['id'],'alice');check($rotated['secret']['salt']!==$inboxRow['secret']['salt'],'Rotation did not change upload code');
+$newer=uploadFixture($rotated,'received after password rotation','newer.txt');work();check($transfers->receipt($newer)['state']==='done','Rotated inbox failed to import');
+$inboxRow=$rotated;
+$view=\OCA\NextShuttle\Service\Transfers::publicRow($ready);
+check(isset($view['share_code'],$view['encryption_key'])&&!str_contains($view['share_code'],$view['encryption_key']),'Share code/key presentation invalid');
 $count=count($destination->getDirectoryListing());work();check(count($destination->getDirectoryListing())===$count,'Retry duplicated an import');
 uploadFixture($inboxRow,'reject-this-ci-file','blocked.txt');work();check(count($destination->getDirectoryListing())===$count,'Rejected upload was imported');
 $poll=$server->get(\OCA\NextShuttle\BackgroundJob\PollEvents::class);$run=new ReflectionMethod($poll,'run');$run->invoke($poll,null);

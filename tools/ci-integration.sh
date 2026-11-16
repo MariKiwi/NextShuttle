@@ -41,3 +41,6 @@ docker exec -u www-data nextcloud-test php /tmp/nextshuttle-integration.php
 
 docker cp nextcloud-test:/tmp/http-fixture.json ci-state/http-fixture.json
 python3 tests/nextcloud_http.py
+
+docker exec -u www-data nextcloud-test php /tmp/nextshuttle-integration.php worker
+node tests/nextcloud_browser.mjs

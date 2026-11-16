@@ -66,7 +66,7 @@ class PollEvents extends TimedJob {
                 $notification->setApp('nextshuttle')->setUser($uid)
                     ->setDateTime((new \DateTime())->setTimestamp((int)$event['occurred']))
                     ->setObject('event', (string)$event['sequence'])
-                    ->setSubject('security_event', ['kind' => $event['kind'], 'severity' => $event['severity']]);
+                    ->setSubject('security_event', ['kind' => $event['kind'], 'severity' => $event['severity'],'client_ip'=>$event['client_ip']??null,'country'=>$event['country']??null,'ip_source'=>$event['ip_source']??null,'country_status'=>$event['country_status']??null]);
                 $this->notifications->notify($notification);
                 $this->events->delivered((int)$event['sequence'], $uid);
             } catch (\Throwable $e) {

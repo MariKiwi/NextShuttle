@@ -4,6 +4,7 @@ Storage names come only from generated IDs. SQLite write transactions serialize
 reservations, counters and state changes across both listener processes.
 """
 from contextlib import contextmanager
+from contextvars import ContextVar
 import hashlib
 import hmac
 import os
@@ -43,6 +44,7 @@ def password_hash(password, salt, *, legacy=False):
 class Store:
     def __init__(self, directory, *, capacity=1024**3, max_blob=32*1024**2,
                  max_ttl=7*86400, retention=7*86400, clock=time.time):
+        self.visitor=ContextVar('nextshuttle_visitor',default={})
         self.root = Path(directory)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.capacity, self.max_blob = capacity, max_blob
@@ -77,9 +79,9 @@ class Store:
     def event(self, kind, ident=None, parent=None, severity="info", size=None, db=None):
         from relay.audit import append
         if db is not None:
-            return append(db, self.now(), kind, ident, parent, severity, size)
+            return append(db, self.now(), kind, ident, parent, severity, size, self.visitor.get())
         with self.tx() as connection:
-            return append(connection, self.now(), kind, ident, parent, severity, size)
+            return append(connection, self.now(), kind, ident, parent, severity, size, self.visitor.get())
 
     def events(self, after=0, limit=100):
         from relay.audit import read

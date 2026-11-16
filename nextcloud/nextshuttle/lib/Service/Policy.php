@@ -8,13 +8,13 @@ use OCP\Share\IManager;
 class Policy {
     public const DEFAULTS=['max_ttl'=>604800,'default_ttl'=>86400,'max_file'=>16777216,
         'max_active'=>100,'max_user_bytes'=>268435456,'max_downloads'=>10,
-        'max_inbox_files'=>20,'max_inbox_bytes'=>134217728,'min_password'=>16,'require_download_password'=>false,'groups'=>[],
+        'max_inbox_files'=>20,'max_inbox_bytes'=>134217728,'min_password'=>16,'require_download_password'=>true,'groups'=>[],
         'types'=>['txt','png','jpg','jpeg','pdf','docx','xlsx','pptx','zip']];
     public function __construct(private IConfig $config,private IGroupManager $groups,private IUserManager $users,private IManager $sharing) {}
     public function get(): array {
         $raw=$this->config->getAppValue('nextshuttle','policy','{}');
         $p=array_replace(self::DEFAULTS,json_decode($raw,true,16,JSON_THROW_ON_ERROR));
-        $p['require_download_password']=$p['require_download_password']||$this->sharing->shareApiLinkEnforcePassword();return $p;
+        $p['require_download_password']=true;return $p;
     }
     public function save(array $input): void {
         $p=array_replace($this->get(),array_intersect_key($input,self::DEFAULTS));

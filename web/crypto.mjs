@@ -10,28 +10,32 @@ export function safeName(name){
 }
 function manifest(file){safeName(file.name);if(!Number.isSafeInteger(file.size)||file.size<1||file.size>MAX_PLAIN)throw Error('File exceeds the 32 MiB limit');return encoder.encode(JSON.stringify({name:file.name,size:file.size}));}
 function u32(n){return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]);}
-export function cipherSize(file,upload=false){const m=manifest(file);return 5+(upload?80:0)+24+4+m.length+17+file.size+Math.ceil(file.size/CHUNK)*21+21;}
-export async function encrypt(file,publicKey=null){
+export function cipherSize(file,upload=false,protectedStream=false){const m=manifest(file);return 5+(protectedStream?16:0)+(upload?80:0)+24+4+m.length+17+file.size+Math.ceil(file.size/CHUNK)*21+21;}
+export async function encrypt(file,publicKey=null,protection=null){
  await ready(); const meta=manifest(file), key=sodium.crypto_secretstream_xchacha20poly1305_keygen();
- const upload=publicKey!==null, prefix=encoder.encode(upload?'NSH1U':'NSH1D');
+ const upload=publicKey!==null, prefix=encoder.encode(protection?(upload?'NSH2U':'NSH2D'):(upload?'NSH1U':'NSH1D'));
+ const seed=key.slice();if(protection){const {protectedKey}=await import('./protection.mjs');key.set(await protectedKey(protection,upload?seed:null));}
  const stream=sodium.crypto_secretstream_xchacha20poly1305_init_push(key);
- const chunks=[prefix];
- if(upload){if(publicKey.length!==32)throw Error('Invalid inbox key');chunks.push(sodium.crypto_box_seal(key,publicKey));}
+ const chunks=[prefix];if(protection)chunks.push(unb64(protection.binding.split('.').at(-1)));
+ if(upload){if(publicKey.length!==32)throw Error('Invalid inbox key');chunks.push(sodium.crypto_box_seal(seed,publicKey));}
  chunks.push(stream.header);
  const frame=(data,tag)=>{const c=sodium.crypto_secretstream_xchacha20poly1305_push(stream.state,data,prefix,tag);chunks.push(u32(c.length),c);};
  frame(meta,sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE);
  for(let offset=0;offset<file.size;offset+=CHUNK)frame(new Uint8Array(await file.slice(offset,offset+CHUNK).arrayBuffer()),sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE);
  frame(new Uint8Array(),sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL);
  const blob=new Blob(chunks,{type:'application/octet-stream'});
- if(blob.size!==cipherSize(file,upload)||blob.size>MAX_CIPHER)throw Error('Invalid encrypted size');
+ if(blob.size!==cipherSize(file,upload,Boolean(protection))||blob.size>MAX_CIPHER)throw Error('Invalid encrypted size');
  return {blob,key};
 }
-export async function decrypt(bytes,key,box=null){
+export async function decrypt(bytes,key,box=null,protection=null){
  await ready();if(!(bytes instanceof Uint8Array)||bytes.length>MAX_CIPHER||bytes.length<50)throw Error('Invalid encrypted file');
  let pos=0; const take=n=>{if(n<0||pos+n>bytes.length)throw Error('Truncated encrypted file');const v=bytes.subarray(pos,pos+n);pos+=n;return v;};
  const prefix=take(5), kind=decoder.decode(prefix);
- if(!['NSH1D','NSH1U'].includes(kind))throw Error('Unsupported encrypted format');
- if(kind==='NSH1U'){if(!box)throw Error('Inbox key required');key=sodium.crypto_box_seal_open(take(80),box.publicKey,box.privateKey);}
+ if(protection&&kind!==(protection.binding.startsWith('D2.')?'NSH2D':'NSH2U'))throw Error('Protected encryption format required');
+ if(!['NSH1D','NSH1U','NSH2D','NSH2U'].includes(kind))throw Error('Unsupported encrypted format');
+ if(kind.startsWith('NSH2')){if(!protection||!sodium.memcmp(take(16),unb64(protection.binding.split('.').at(-1))))throw Error('Encryption password and matching code required');}
+ if(kind==='NSH1U'||kind==='NSH2U'){if(!box)throw Error('Inbox key required');key=sodium.crypto_box_seal_open(take(80),box.publicKey,box.privateKey);}
+ if(kind.startsWith('NSH2')){const {protectedKey}=await import('./protection.mjs');key=await protectedKey(protection,kind==='NSH2U'?key:null);}
  if(!key||key.length!==32)throw Error('Invalid file key');
  const state=sodium.crypto_secretstream_xchacha20poly1305_init_pull(take(24),key);
  const pull=()=>{const length=take(4),n=new DataView(length.buffer,length.byteOffset,4).getUint32(0);if(n<17||n>CHUNK+17)throw Error('Invalid chunk');const r=sodium.crypto_secretstream_xchacha20poly1305_pull(state,take(n),prefix);if(!r)throw Error('Authentication failed');return r;};

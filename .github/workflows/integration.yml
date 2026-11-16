@@ -10,7 +10,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: '24', cache: npm}
       - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: bash tools/ci-integration.sh
       - if: failure()
         run: docker logs nextcloud-test; docker logs relay-private; docker logs private-proxy
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: nextcloud-dashboard-screenshots, path: test-results/, if-no-files-found: ignore}

@@ -20,7 +20,7 @@ class Transfers {
     public function list(?string $uid=null,bool $active=false): array {
         $q=$this->db->getQueryBuilder(); $q->select('*')->from('ns_transfers');
         if ($uid!==null) { $q->where($q->expr()->eq('owner_uid',$q->createNamedParameter($uid))); }
-        if ($active) { $q->andWhere($q->expr()->in('state',$q->createNamedParameter(['queued','preparing','ready','retry','revoking'],\OCP\DB\QueryBuilder\IQueryBuilder::PARAM_STR_ARRAY))); }
+        if ($active) { $q->andWhere($q->expr()->in('state',$q->createNamedParameter(['queued','preparing','ready','retry','revoking','rotating'],\OCP\DB\QueryBuilder\IQueryBuilder::PARAM_STR_ARRAY))); }
         $q->orderBy('created',$active?'ASC':'DESC')->setMaxResults(10000); $r=$q->executeQuery(); $rows=$r->fetchAll(); $r->closeCursor();
         return array_map($this->decode(...),$rows);
     }
@@ -57,10 +57,12 @@ class Transfers {
     }
     public static function publicRow(array $row): array {
         $out=array_intersect_key($row,array_flip(['id','label','kind','state','created','expires','attempts','node_id']));
+        $out['protection']=($row['secret']['crypto']??1)>=2?'password-encrypted':'legacy';
         $out['usage']=$row['options']['usage']??[];
         if ($row['state']==='ready'&&$row['expires']>time()) {
             if ($row['kind']==='download') { $code='D.'.$row['id'].'.'.$row['secret']['token'].'.'.$row['secret']['key']; }
             else { $code='U.'.$row['id'].'.'.$row['secret']['public']; }
+            if (($row['secret']['crypto']??1)>=2) { $code=Protection::binding($row);$out['share_code']=$row['kind']==='download'?'D2.'.$row['id'].'.'.$row['secret']['token'].'.'.$row['secret']['salt']:'U2.'.$row['id'].'.'.$row['secret']['salt'];$out['encryption_key']=$row['secret'][$row['kind']==='download'?'key':'public']; } else { $out['share_code']=$code; }
             $out['code']=$code; $out['url']='https://helios-public.tail43e437.ts.net/nextshuttle/#'.$code;
         }
         return $out;

@@ -44,6 +44,10 @@ class EventCatalog {
             || !in_array($event['severity'] ?? '', ['info', 'warning', 'critical'], true)) {
             throw new \UnexpectedValueException('Invalid relay event');
         }
+        if (($event['client_ip']??null)!==null&&(!is_string($event['client_ip'])||filter_var($event['client_ip'],FILTER_VALIDATE_IP)===false)) { throw new \UnexpectedValueException('Invalid visitor IP'); }
+        if (($event['country']??null)!==null&&(!is_string($event['country'])||!preg_match('/^[A-Z]{2}$/D',$event['country']))) { throw new \UnexpectedValueException('Invalid country code'); }
+        if (($event['ip_source']??null)!==null&&!in_array($event['ip_source'],['peer','verified_proxy'],true)) { throw new \UnexpectedValueException('Invalid IP provenance'); }
+        if (($event['country_status']??null)!==null&&!in_array($event['country_status'],['private_or_reserved','database_missing','database_outdated','database_unavailable','country_unknown','local_database'],true)) { throw new \UnexpectedValueException('Invalid country status'); }
         foreach (['object_id', 'parent_id'] as $key) {
             if (($event[$key] ?? null) !== null && (!is_string($event[$key]) || !preg_match('/^[a-f0-9]{32}$/D', $event[$key]))) {
                 throw new \UnexpectedValueException('Invalid event object');

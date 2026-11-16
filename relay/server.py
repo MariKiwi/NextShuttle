@@ -65,7 +65,9 @@ class BoundedServer(HTTPServer):
         self.pool.shutdown(wait=True)
 
 
-def handler(store, mode, service_token, public_url, admin_password=None,private_origin='https://shuttle.helios.lan'):
+def handler(store, mode, service_token, public_url, admin_password=None,private_origin='https://shuttle.helios.lan',visitors=None):
+    from relay.visitor import Visitors
+    visitors=visitors or Visitors()
     from relay.admin_sessions import Sessions
     sessions=Sessions(store.now)
     origin = urlsplit(public_url)
@@ -171,7 +173,7 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
             if path=='/admin/api/revoke':
                 if data.get('kind') not in ('download','inbox','upload'):raise Rejected(400,'Invalid transfer type')
                 store.revoke(data['kind'],data.get('id',''));store.cleanup();return self.respond({'ok':True})
-            if path=='/admin/api/password':store.rotate_password(data.get('id',''),data.get('password'));return self.respond({'ok':True})
+            if path=='/admin/api/password':raise Rejected(409,'Change upload passwords in Nextcloud to keep encryption keys synchronized')
             if path=='/admin/api/cleanup':store.event('cleanup_requested');return self.respond(store.cleanup())
             if path=='/admin/api/export':return self.respond(store.export_events(data.get('after',0)))
             if path=='/admin/api/prune':return self.respond(store.prune_audit(data.get('before')))
@@ -329,6 +331,7 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
         def request(self):
             self.response_started = False
             self.pending_cookie=None
+            context=store.visitor.set(visitors.resolve(self.client_address[0],self.headers) if mode=='public' else {})
             try:
                 parsed = urlsplit(self.path)
                 if mode=='private' and admin_password and (parsed.path=='/' or parsed.path.startswith('/admin/')):
@@ -362,6 +365,8 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
                     if not self.response_started:
                         self.respond({"error": "Internal relay error"}, 500)
 
+            finally:store.visitor.reset(context)
+
         do_GET = do_POST = do_PUT = do_DELETE = do_OPTIONS = request
 
     return Handler
@@ -389,7 +394,11 @@ def main():
     parsed = urlsplit(public_url)
     if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
         raise SystemExit("Public URL must be an HTTPS origin with an optional base path")
-    server = BoundedServer((args.bind, args.port), handler(store, args.mode, token, public_url,admin_password))
+    from relay.visitor import Visitors
+    proxy_file=Path(os.environ.get('NEXTSHUTTLE_PROXY_TOKEN_FILE','/proxy/forwarded_token'))
+    proxy_token=proxy_file.read_text().strip() if args.mode=='public' and proxy_file.is_file() else ''
+    visitors=Visitors(os.environ.get('NEXTSHUTTLE_TRUSTED_PROXIES',''),proxy_token,os.environ.get('NEXTSHUTTLE_GEOIP_DATABASE','/geoip/country.mmdb'))
+    server = BoundedServer((args.bind, args.port), handler(store,args.mode,token,public_url,admin_password,visitors=visitors))
     stopped = threading.Event()
 
     def stop(*_):

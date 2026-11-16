@@ -13,7 +13,10 @@ services:
       NEXTSHUTTLE_SERVICE_TOKEN_FILE: /run/secrets/service_token
       NEXTSHUTTLE_CAPACITY: "1073741824"
       NEXTSHUTTLE_MAX_BLOB: "35651584"
-    volumes: ["shuttle-data:/data"]
+      NEXTSHUTTLE_TRUSTED_PROXIES: "${NEXTSHUTTLE_TRUSTED_PROXIES:-}"
+      NEXTSHUTTLE_GEOIP_DATABASE: /geoip/country.mmdb
+      NEXTSHUTTLE_PROXY_TOKEN_FILE: /proxy/forwarded_token
+    volumes: ["shuttle-data:/data", "./geoip:/geoip:ro", "./proxy:/proxy:ro"]
     networks: [public-backend]
     restart: unless-stopped
     read_only: true

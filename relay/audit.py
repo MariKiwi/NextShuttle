@@ -29,10 +29,13 @@ def initialize(db):
     INSERT OR IGNORE INTO audit_state VALUES (1, 0);
     CREATE TABLE IF NOT EXISTS audit_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL);
     ''')
+    columns={row[1] for row in db.execute('PRAGMA table_info(audit_events)')}
+    for name in ('client_ip','country','ip_source','country_status'):
+        if name not in columns:db.execute('ALTER TABLE audit_events ADD COLUMN '+name+' TEXT')
     db.execute("INSERT OR IGNORE INTO audit_meta VALUES ('journal_id', ?)", (secrets.token_hex(16),))
 
 
-def append(db, now, kind, object_id=None, parent_id=None, severity="info", size=None):
+def append(db, now, kind, object_id=None, parent_id=None, severity="info", size=None, visitor=None):
     if kind not in KINDS or severity not in ("info", "warning", "critical"):
         raise Rejected(400, "Unsupported event")
     for ident in (object_id, parent_id):
@@ -43,8 +46,9 @@ def append(db, now, kind, object_id=None, parent_id=None, severity="info", size=
     if db.execute("SELECT count(*) FROM audit_events").fetchone()[0] >= 100000:
         # Never silently drop events. Operator export/retention is required.
         raise Rejected(507, "Audit journal full")
-    result = db.execute("INSERT INTO audit_events (occurred,kind,object_id,parent_id,severity,bytes) VALUES (?,?,?,?,?,?)",
-                        (now, kind, object_id, parent_id, severity, size))
+    visitor=visitor or {}
+    result = db.execute("INSERT INTO audit_events (occurred,kind,object_id,parent_id,severity,bytes,client_ip,country,ip_source,country_status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (now,kind,object_id,parent_id,severity,size,visitor.get('client_ip'),visitor.get('country'),visitor.get('ip_source'),visitor.get('country_status')))
     return result.lastrowid
 
 

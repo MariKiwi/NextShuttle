@@ -67,7 +67,7 @@ class Events {
             }
             $q = $this->db->getQueryBuilder();
             $q->insert('ns_events');
-            foreach (['sequence', 'occurred', 'kind', 'severity', 'object_id', 'parent_id'] as $key) {
+            foreach (['sequence', 'occurred', 'kind', 'severity', 'object_id', 'parent_id','client_ip','country','ip_source','country_status'] as $key) {
                 $q->setValue($key, $q->createNamedParameter($event[$key] ?? null));
             }
             $q->setValue('owner_uid', $q->createNamedParameter($owner))->executeStatement();
@@ -81,7 +81,7 @@ class Events {
     }
     public function pending(): array {
         $q = $this->db->getQueryBuilder();
-        $q->select('e.sequence', 'e.occurred', 'e.kind', 'e.severity', 'e.owner_uid', 'd.recipient')->from('ns_events', 'e')
+        $q->select('e.sequence', 'e.occurred', 'e.kind', 'e.severity', 'e.owner_uid','e.client_ip','e.country','e.ip_source','e.country_status', 'd.recipient')->from('ns_events', 'e')
             ->innerJoin('e', 'ns_deliveries', 'd', $q->expr()->eq('e.sequence', 'd.sequence'))
             ->where($q->expr()->eq('d.delivered', $q->createNamedParameter(0)))->orderBy('e.sequence', 'ASC')->setMaxResults(1000);
         $r = $q->executeQuery(); $rows = $r->fetchAll(); $r->closeCursor(); return $rows;
