@@ -66,6 +66,8 @@ class BoundedServer(HTTPServer):
 
 
 def handler(store, mode, service_token, public_url, admin_password=None,private_origin='https://shuttle.helios.lan'):
+    from relay.admin_sessions import Sessions
+    sessions=Sessions(store.now)
     origin = urlsplit(public_url)
     public_origin = f"{origin.scheme}://{origin.netloc}"
     prefix = origin.path.rstrip("/") + "/api/v1/" if mode == "public" else "/api/v1/"
@@ -101,6 +103,7 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" if web else "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
             self.send_header("Connection", "close")
+            if getattr(self,'pending_cookie',None):self.send_header('Set-Cookie',self.pending_cookie)
             self.end_headers()
 
         def respond(self, data, status=200):
@@ -109,7 +112,7 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
             self.wfile.write(body)
 
         def static(self, name, csrf=None):
-            allowed={'index.html':'text/html; charset=utf-8','public.js':'text/javascript','public.css':'text/css','admin.html':'text/html; charset=utf-8','admin.js':'text/javascript'}
+            allowed={'index.html':'text/html; charset=utf-8','public.js':'text/javascript','public.css':'text/css','admin.html':'text/html; charset=utf-8','admin.js':'text/javascript','login.html':'text/html; charset=utf-8','login.js':'text/javascript'}
             if name not in allowed:raise Rejected()
             path=Path(__file__).parent/'static'/name
             if not path.is_file():raise Rejected(503,'Frontend build unavailable')
@@ -117,35 +120,54 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
             if csrf is not None:raw=raw.replace(b'__CSRF__',html.escape(csrf).encode())
             self.headers_out(200,len(raw),allowed[name],web=True);self.wfile.write(raw)
 
-        def csrf(self, bucket=None):
-            bucket=store.now()//3600 if bucket is None else bucket
-            return hmac.new((service_token+admin_password).encode(),str(bucket).encode(),hashlib.sha256).hexdigest()
+        def set_session_cookie(self,token,ttl):
+            self.pending_cookie=f'{sessions.cookie_name}={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age={ttl}'
 
         def admin(self):
-            import base64
             store.rate(self.client_address[0],limit=120,scope='admin')
-            value=self.headers.get('Authorization','')
-            try: valid=hmac.compare_digest(base64.b64decode(value[6:],validate=True).decode(),'admin:'+admin_password) if value.startswith('Basic ') else False
-            except (ValueError,UnicodeError,TypeError):valid=False
-            if not valid:
-                try:store.event('access_denied',severity='warning')
-                except Rejected:pass # Authentication challenge must remain available for recovery.
-                self.send_response(401);self.send_header('WWW-Authenticate','Basic realm="NextShuttle private administration", charset="UTF-8"');self.send_header('Content-Length','0');self.end_headers();return
-            path=urlsplit(self.path).path
+            parsed=urlsplit(self.path);path=parsed.path
+            if parsed.query or parsed.fragment:raise Rejected()
+            if self.command=='GET' and path in ('/admin/assets/login.js','/admin/assets/public.css'):
+                return self.static(path.rsplit('/',1)[-1])
+            token=sessions.token(self.headers.get('Cookie',''));session=sessions.get(token)
+            if self.command=='GET' and path=='/' and not (session and session['authenticated']):
+                try:token,session,ttl=sessions.create(replace=token)
+                except ValueError:raise Rejected(503,'Administration busy')
+                self.set_session_cookie(token,ttl);return self.static('login.html',session['csrf'])
+            if self.command=='POST':
+                if self.headers.get('Origin')!=private_origin:raise Rejected(403,'Private origin required')
+                if not session or not hmac.compare_digest(self.headers.get('X-NextShuttle-CSRF',''),session['csrf']):raise Rejected(403,'Reload the administration page')
+                if path=='/admin/login':
+                    store.rate(self.client_address[0],limit=10,scope='admin-login')
+                    password=self.body().get('password')
+                    if not isinstance(password,str) or len(password)>256 or not hmac.compare_digest(password.encode(),admin_password.encode()):raise Rejected(401,'Sign in failed')
+                    try:store.event('admin_logged_in')
+                    except Rejected as error:
+                        if error.status!=507:raise
+                        print('NextShuttle recovery administrator signed in while audit storage is full',flush=True)
+                    try:token,session,ttl=sessions.create(True,replace=token)
+                    except ValueError:raise Rejected(503,'Administration busy')
+                    self.set_session_cookie(token,ttl);return self.respond({'ok':True})
+            if not session or not session['authenticated']:raise Rejected(401,'Sign in required')
             if self.command=='GET':
                 if path=='/':
                     try:store.event('admin_page_accessed')
                     except Rejected:pass # Read-only recovery UI must remain reachable if the audit capacity is exhausted.
-                    return self.static('admin.html',self.csrf())
+                    return self.static('admin.html',session['csrf'])
                 if path=='/admin/assets/admin.js':return self.static('admin.js')
                 if path=='/admin/assets/public.css':return self.static('public.css')
                 if path=='/admin/api/state':
                     with store.tx() as db:high=db.execute('SELECT coalesce(max(sequence),0) FROM audit_events').fetchone()[0]
                     return self.respond({'transfers':store.list(),'audit':store.events(max(0,high-100)),'capacity':store.capacity,'max_blob':store.max_blob})
-            if self.command!='POST' or self.headers.get('Origin')!=private_origin:raise Rejected(403,'Private origin required')
-            token=self.headers.get('X-NextShuttle-CSRF','')
-            if not any(hmac.compare_digest(token,self.csrf(bucket)) for bucket in (store.now()//3600,store.now()//3600-1)):raise Rejected(403,'Reload the administration page')
+            if self.command!='POST':raise Rejected()
             data=self.body()
+            if path=='/admin/logout':
+                sessions.remove(token);self.set_session_cookie('',0)
+                try:store.event('admin_logged_out')
+                except Rejected as error:
+                    if error.status!=507:raise
+                    print('NextShuttle administrator signed out while audit storage is full',flush=True)
+                return self.respond({'ok':True})
             if path=='/admin/api/revoke':
                 if data.get('kind') not in ('download','inbox','upload'):raise Rejected(400,'Invalid transfer type')
                 store.revoke(data['kind'],data.get('id',''));store.cleanup();return self.respond({'ok':True})
@@ -306,6 +328,7 @@ def handler(store, mode, service_token, public_url, admin_password=None,private_
 
         def request(self):
             self.response_started = False
+            self.pending_cookie=None
             try:
                 parsed = urlsplit(self.path)
                 if mode=='private' and admin_password and (parsed.path=='/' or parsed.path.startswith('/admin/')):

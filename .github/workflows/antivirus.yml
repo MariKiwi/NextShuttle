@@ -1,6 +1,7 @@
 name: Real antivirus staging
 on: [push, pull_request]
 permissions: {contents: read}
+env: {NEXTSHUTTLE_BIND_IP: '127.0.0.1'}
 jobs:
   real-engines:
     runs-on: ubuntu-latest

@@ -28,6 +28,8 @@ class EventCatalog {
         'upload_imported' => 'A cleared upload was imported',
         'scan_clean' => 'Both scanners cleared an upload',
         'download_retried'=>'An interrupted download preparation was retried',
+        'admin_logged_in'=>'An administrator signed in to the private shuttle',
+        'admin_logged_out'=>'An administrator signed out of the private shuttle',
         'admin_page_accessed'=>'The private shuttle administration page was accessed',
         'audit_pruned'=>'Archived audit history was pruned',
         'policy_changed'=>'NextShuttle sharing policies were changed',

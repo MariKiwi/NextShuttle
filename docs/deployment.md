@@ -37,17 +37,19 @@ Root filesystems are read-only, privileges dropped, and plaintext staging uses b
 
 ## Existing reverse proxy
 
-| HTTPS frontend | Host-loopback backend | Container-network backend | Path |
-|---|---|---|---|
-| helios-public.tail43e437.ts.net/nextshuttle/ | 127.0.0.1:9080 | shuttle-public:8080 | Preserve `/nextshuttle/` |
-| shuttle.helios.lan/ | 127.0.0.1:9081 | shuttle-private:8081 | Preserve root and `/api/v1/` |
-| shuttle.helios.lan/ingestion/v1/ | 127.0.0.1:9082 | shuttle-ingestion:8082 | Preserve `/ingestion/v1/`; more specific route |
+The NPM container reaches backend ports through its host gateway **172.19.0.1**. Compose defaults to binding only that address; `NEXTSHUTTLE_BIND_IP` can select a different existing host interface. Do not use `0.0.0.0`. No direct NPM-to-NextShuttle Docker network connections are required.
 
-Host loopback is unreachable from a separate proxy container. In that case attach the existing proxy to the appropriate backend networks instead. Keep private/scanner routes absent from every public virtual host and tunnel. Never change host bindings to `0.0.0.0` to work around routing.
+| HTTPS frontend | HTTP backend | Path |
+|---|---|---|
+| helios-public.tail43e437.ts.net/nextshuttle/ | 172.19.0.1:9080 | Preserve `/nextshuttle/` |
+| shuttle.helios.lan/ | 172.19.0.1:9081 | Preserve root and `/api/v1/` |
+| shuttle.helios.lan/ingestion/v1/ | 172.19.0.1:9082 | Preserve `/ingestion/v1/`; more specific route |
+
+The gateway address must exist on the Docker host before starting Compose. Restrict access to these backend ports to your proxy/network policy. Keep private/scanner routes absent from every public virtual host and tunnel. A host-interface bind does not replace firewall policy. Leave the ingestion worker on its isolated scanner network.
 
 Require verified HTTPS, preserve Authorization, disable caching and API CORS, and exclude authorization headers, bodies and codes from proxy logs. Use finite connection/read/send limits and a body allowance of **34 MiB ciphertext** (32 MiB plaintext hard cap). Requests require a unique Content-Length; chunked request bodies are rejected. Disable automatic retries for mutations and download claims. Add per-client abuse limits at the proxy: application limits see the proxy source IP and do not trust X-Forwarded-For. Limit request-header sizes too. Do not enable content previews or inline execution of received files.
 
-Private relay administration uses HTTP Basic username **admin** and the separate `admin_password`, only over private HTTPS. Management API uses `service_token`; ingestion uses `scanner_token`. Add mutual TLS at the private proxy if required, while preserving browser admin access through a separately controlled client identity.
+Private relay administration uses a password form with the separate `admin_password`, only over private HTTPS. There is no HTTP Basic authentication. Server-side sessions use Secure, HttpOnly, SameSite=Strict host-only cookies, rotate on sign-in, expire after 30 idle minutes or eight hours total, and are invalidated on logout or relay restart. Login and mutations require origin and session-bound CSRF checks. Do not add NPM Basic Auth or interactive proxy authentication to the service API. Management API uses `service_token`; ingestion uses `scanner_token`. Add mutual TLS at the private proxy if required, while preserving browser admin access through a separately controlled client identity.
 
 ## Nextcloud app
 

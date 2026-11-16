@@ -1,12 +1,12 @@
 # Two isolated listener processes using the same image and persistent data.
-# Keep all published sockets on loopback. Route the existing proxy accordingly.
+# Bind backend ports to the NPM host gateway, never all interfaces.
 # These are backend HTTP sockets; clients must reach them ONLY through HTTPS.
 services:
   shuttle-public:
     build: .
     image: nextshuttle:development
     command: ["--mode", "public", "--bind", "0.0.0.0", "--port", "8080"]
-    ports: ["127.0.0.1:9080:8080"]
+    ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9080:8080"]
     environment: &environment
       NEXTSHUTTLE_PUBLIC_URL: https://helios-public.tail43e437.ts.net/nextshuttle/
       NEXTSHUTTLE_DATA: /data
@@ -28,7 +28,7 @@ services:
     image: nextshuttle:development
     build: .
     command: ["--mode", "private", "--bind", "0.0.0.0", "--port", "8081"]
-    ports: ["127.0.0.1:9081:8081"]
+    ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9081:8081"]
     environment: *environment
     volumes: ["shuttle-data:/data"]
     secrets: [service_token, admin_password]
@@ -45,7 +45,7 @@ services:
   shuttle-ingestion:
     build: {context: ., dockerfile: Dockerfile.ingestion}
     image: nextshuttle-ingestion:development
-    ports: ["127.0.0.1:9082:8082"]
+    ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9082:8082"]
     secrets: [scanner_token]
     volumes: ["clam-socket:/run/nextshuttle", "lmd-sigs:/usr/local/maldetect/sigs:ro"]
     tmpfs:

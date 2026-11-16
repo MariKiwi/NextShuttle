@@ -13,7 +13,7 @@ KINDS = frozenset({
     "service_error", "malware_detected", "content_rejected", "scan_unavailable",
     "upload_imported", "scan_clean",
     "download_retried", "admin_page_accessed", "audit_pruned", "policy_changed", "credentials_rotated", "cleanup_requested",
-    "scanner_recovered",
+    "scanner_recovered", "admin_logged_in", "admin_logged_out",
 })
 SCANNER_KINDS = frozenset({"malware_detected", "content_rejected", "scan_unavailable", "upload_imported", "scan_clean", "policy_changed", "credentials_rotated", "service_error", "page_accessed", "scanner_recovered"})
 

@@ -113,18 +113,35 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.store.events()["acknowledged"], 1)
         self.assertEqual(self.request("public", "POST", "/nextshuttle/api/v1/events/read", b'{"after":0}', auth)[0], 404)
 
-    def test_private_admin_uses_separate_authentication_and_csrf(self):
-        import base64,re
-        self.assertEqual(self.request('private','GET','/')[0],401)
-        headers={'Authorization':'Basic '+base64.b64encode(('admin:'+'a'*64).encode()).decode()}
-        status,body,_=self.request('private','GET','/',headers=headers);self.assertEqual(status,200)
+    def test_private_admin_uses_rotated_sessions_and_csrf_without_basic_auth(self):
+        import re
+        status,body,response=self.request('private','GET','/')
+        self.assertEqual(status,200);self.assertNotIn('WWW-Authenticate',response)
+        import base64
+        basic='Basic '+base64.b64encode(('admin:'+'a'*64).encode()).decode()
+        self.assertEqual(self.request('private','GET','/admin/api/state',headers={'Authorization':basic})[0],401)
+        cookie=response['Set-Cookie'].split(';')[0]
+        for flag in ('Secure','HttpOnly','SameSite=Strict'):self.assertIn(flag,response['Set-Cookie'])
         csrf=re.search(rb'name="csrf" content="([a-f0-9]+)"',body)[1].decode()
+        headers={'Cookie':cookie,'Content-Type':'application/json','Origin':'https://shuttle.helios.lan','X-NextShuttle-CSRF':csrf}
+        self.assertEqual(self.request('private','POST','/admin/login',b'{"password":"wrong"}',headers)[0],401)
+        headers['Origin']='https://evil.example'
+        self.assertEqual(self.request('private','POST','/admin/login',json.dumps({'password':'a'*64}),headers)[0],403)
+        headers['Origin']='https://shuttle.helios.lan'
+        status,_,response=self.request('private','POST','/admin/login',json.dumps({'password':'a'*64}),headers)
+        self.assertEqual(status,200);new_cookie=response['Set-Cookie'].split(';')[0];self.assertNotEqual(cookie,new_cookie)
+        self.assertEqual(self.request('private','GET','/admin/api/state',headers={'Cookie':cookie})[0],401)
+        headers['Cookie']=new_cookie
+        _,body,_=self.request('private','GET','/',headers=headers)
+        headers['X-NextShuttle-CSRF']=re.search(rb'name="csrf" content="([a-f0-9]+)"',body)[1].decode()
         self.assertNotIn(self.token.encode(),body)
-        headers.update({'Content-Type':'application/json','Origin':'https://shuttle.helios.lan'})
-        self.assertEqual(self.request('private','POST','/admin/api/cleanup',b'{}',headers)[0],403)
-        headers['X-NextShuttle-CSRF']=csrf
         self.assertEqual(self.request('private','POST','/admin/api/cleanup',b'{}',headers)[0],200)
+        saved=headers.pop('X-NextShuttle-CSRF')
+        self.assertEqual(self.request('private','POST','/admin/api/cleanup',b'{}',headers)[0],403)
+        headers['X-NextShuttle-CSRF']=saved
         self.assertEqual(self.request('public','GET','/admin/api/state',headers=headers)[0],404)
+        self.assertEqual(self.request('private','POST','/admin/logout',b'{}',headers)[0],200)
+        self.assertEqual(self.request('private','GET','/admin/api/state',headers=headers)[0],401)
 
 
 if __name__ == "__main__":

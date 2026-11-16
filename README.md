@@ -12,7 +12,7 @@ Private administration and service API: **https://shuttle.helios.lan/**
 * Browser-to-Nextcloud authenticated encryption. The public relay stores ciphertext; private keys remain in Nextcloud. Uploads are decrypted only inside the private network.
 * Private quarantine, bounded format validation, ClamAV **and Linux Malware Detect's independent native engine**, then collision-safe import with durable receipts. Both scanners must approve the identical bytes. Outgoing snapshots also require clearance.
 * Owner-only transfer dashboard, retries, password rotation and event history. Nextcloud admin settings control sharing policies, groups, expiry, types and quotas while respecting native sharing permissions.
-* Separate private relay admin page with its own credential, CSRF protection, revocation and audit export/retention controls.
+* Separate private relay admin page with its own session login, CSRF protection, revocation and audit export/retention controls.
 * Durable event and notification queues for every enabled global admin and the affected owner. Covers access, wrong codes, transfers, rejection, scanner outages, policy changes and other noteworthy events.
 
 The Compose stack separates public/private relay processes, ingestion, ClamAV and signature updates. Only the updater needs Internet access; scanners receive no Nextcloud credentials or decryption keys.

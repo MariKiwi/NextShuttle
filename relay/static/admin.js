@@ -17,3 +17,5 @@ function changePassword(id){
  dialog.append(form,status,action('Cancel',()=>{dialog.close();dialog.remove();}));document.body.append(dialog);dialog.showModal();input.focus();
  form.addEventListener('submit',async event=>{event.preventDefault();save.disabled=true;try{await api('password',{id,password:input.value});input.value='';dialog.close();dialog.remove();await refresh();}catch(error){status.textContent=error.message;}finally{save.disabled=false;}});
 }
+
+$('logout').onclick=async()=>{try{const r=await fetch('/admin/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-NextShuttle-CSRF':csrf},body:'{}'});if(!r.ok)throw Error('Sign out failed');location.replace('/');}catch(e){$('status').textContent=e.message;}};

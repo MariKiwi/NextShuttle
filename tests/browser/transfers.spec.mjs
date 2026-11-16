@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {encrypt,decrypt,ready,b64} from '../../web/crypto.mjs';
-const sodium=await ready(),privateURL='http://127.0.0.1:9085/api/v1/';
+const sodium=await ready(),privateURL='https://localhost:9085/api/v1/';
 async function privatePost(request,path,data){const r=await request.post(privateURL+path,{headers:{Authorization:'Bearer '+'r'.repeat(64)},data});expect(r.ok()).toBeTruthy();return r.json();}
 test('protected download decrypts in a real browser under CSP',async({page,request})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -34,11 +34,12 @@ test('upload stays encrypted on the relay and binds the trusted inbox key',async
 });
 test('private admin authentication, CSRF and audit export work in-browser',async({browser,request})=>{
  const t=await privatePost(request,'downloads',{bytes:4,ttl:3600});
- const context=await browser.newContext({httpCredentials:{username:'admin',password:'a'.repeat(64)}}),page=await context.newPage();
- await page.goto('http://127.0.0.1:9085/');await expect(page.getByRole('heading',{name:'NextShuttle',exact:true})).toBeVisible();
+ const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
+ await page.goto('https://localhost:9085/');await page.getByLabel('Administrator password').fill('a'.repeat(64));await page.getByRole('button',{name:'Sign in',exact:true}).click();await expect(page.locator('#summary')).toContainText('Storage capacity');await expect(page.getByRole('heading',{name:'NextShuttle',exact:true})).toBeVisible();
  const row=page.locator('#transfers p').filter({hasText:t.id});await row.getByRole('button',{name:'Revoke',exact:true}).click();
  await expect(page.locator('#transfers').getByText(t.id,{exact:false})).toHaveCount(0);
  const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Export complete audit journal'}).click();const download=await waiting;
  const text=(await readFile(await download.path())).toString();expect(text).toContain('admin_page_accessed');expect(text).not.toContain(t.access_token);expect(text).not.toContain('r'.repeat(64));
+ await page.getByRole('button',{name:'Sign out',exact:true}).click();await expect(page.getByLabel('Administrator password')).toBeVisible();
  await context.close();
 });
