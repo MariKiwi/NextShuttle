@@ -17,11 +17,11 @@ function render(){
   identity.append(element('span',t.kind==='inbox'?'UPLOAD INBOX':'SHARED FILE','ns-eyebrow'),element('h2',t.label));
   const badge=element('span',stateLabels[t.state]||t.state,'ns-badge ns-state-'+t.state);heading.append(identity,badge);card.append(heading);
   const meta=element('div',undefined,'ns-meta');meta.append(element('span','Expires '+new Date(t.expires*1000).toLocaleString()));
-  if(t.kind==='download'&&t.usage?.downloads!==undefined)meta.append(element('span',t.usage.downloads+' downloads'));
-  if(t.kind==='inbox'&&t.usage?.files!==undefined)meta.append(element('span',t.usage.files+' files received'));
+  if(t.kind==='download'&&t.usage?.downloads!==undefined)meta.append(element('span',t.usage.downloads+' / '+(t.limits?.max_uses??'—')+' downloads'));
+  if(t.kind==='inbox'&&t.usage?.files!==undefined)meta.append(element('span',t.usage.files+' / '+(t.limits?.max_files??'—')+' files received'));
   card.append(meta);const status=element('p','','ns-card-status');status.role='status';
   function secret(label,value,masked=false){
-   const box=element('div',undefined,'ns-secret'),title=element('label',label),field=element('input');field.readOnly=true;field.value=value;field.type=masked?'password':'text';field.spellcheck=false;field.autocomplete='off';field.setAttribute('aria-label',label);title.append(field);box.append(title);
+   const box=element('div',undefined,'ns-secret'),title=element('label',label),field=element(masked?'input':'textarea');if(!masked)field.rows=3;field.readOnly=true;field.value=value;if(masked)field.type='password';field.spellcheck=false;field.autocomplete='off';field.setAttribute('aria-label',label);title.append(field);box.append(title);
    const control=button('Copy '+label.toLowerCase(),()=>copy(value,control,status));box.append(control);
    if(masked)box.append(button('Show key',event=>{const show=field.type==='password';field.type=show?'text':'password';event.currentTarget.textContent=show?'Hide key':'Show key';}));
    return box;

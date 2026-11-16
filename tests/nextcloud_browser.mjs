@@ -1,10 +1,10 @@
 import {chromium,expect} from '@playwright/test';
 import {mkdir} from 'node:fs/promises';
-const base='https://localhost:9083',browser=await chromium.launch();
+const base='https://localhost:9083',browser=await chromium.launch();let screenshotPage;
 await mkdir('test-results',{recursive:true});
 try{
  const context=await browser.newContext({ignoreHTTPSErrors:true,permissions:['clipboard-read','clipboard-write']}),page=await context.newPage();
- await page.goto(base+'/login');
+ screenshotPage=page;await page.goto(base+'/login');
  const token=await page.locator('[data-requesttoken]').first().getAttribute('data-requesttoken');
  const login=await context.request.post(base+'/login',{form:{user:'alice',password:'ephemeral-ci-password-246810',requesttoken:token,redirect_url:'/index.php/apps/nextshuttle/'},headers:{Origin:base,Referer:base+'/login'},maxRedirects:0});
  expect([302,303]).toContain(login.status());
@@ -23,4 +23,4 @@ try{
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  console.log('Real Nextcloud dashboard: visible code/key, clipboard, search and responsive layout passed');
  await context.close();
-}finally{await browser.close();}
+}catch(error){if(screenshotPage)await screenshotPage.screenshot({path:'test-results/nextcloud-dashboard-failure.png',fullPage:true}).catch(()=>{});throw error;}finally{await browser.close();}

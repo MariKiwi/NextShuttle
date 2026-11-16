@@ -17,7 +17,8 @@ export async function openTransfer(node){
  let password,bytes;
  password=field(kind==='inbox'?`Reusable upload password (at least ${limits.min_password} characters)`:(limits.require_download_password?'Separate download password':'Encryption password (required)'),'password','');password.minLength=limits.min_password;password.maxLength=256;password.autocomplete='new-password';password.required=true;
  if(kind==='inbox')bytes=field('Total inbox capacity (MiB)','number',limits.max_inbox_bytes/1048576,1,limits.max_inbox_bytes/1048576);
- if(password){form.append(button('Generate password',()=>{const raw=crypto.getRandomValues(new Uint8Array(Math.ceil(Math.max(24,limits.min_password)*3/4)));password.value=btoa(String.fromCharCode(...raw)).replaceAll('+','-').replaceAll('/','_');}),button('Copy password',()=>navigator.clipboard.writeText(password.value)));}
+ function generatePassword(){const raw=crypto.getRandomValues(new Uint8Array(Math.ceil(Math.max(24,limits.min_password)*3/4)));password.value=btoa(String.fromCharCode(...raw)).replaceAll('+','-').replaceAll('/','_');}
+ generatePassword();form.append(button('Generate another password',generatePassword),button('Copy password',()=>navigator.clipboard.writeText(password.value)));
  const submit=document.createElement('button');submit.type='submit';submit.textContent='Create transfer';form.append(submit);
  form.addEventListener('submit',async event=>{event.preventDefault();submit.disabled=true;try{
   const options={ttl:Math.floor(Number(hours.value)*3600)};

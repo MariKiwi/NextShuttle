@@ -35,6 +35,7 @@ done
 test "$ready" = 1
 docker cp ci-state/ca.crt nextcloud-test:/tmp/ci-ca.crt
 docker cp tests/nextcloud-integration.php nextcloud-test:/tmp/nextshuttle-integration.php
+docker exec -u www-data nextcloud-test php occ app:disable firstrunwizard
 docker exec -u www-data nextcloud-test php occ app:enable notifications
 docker exec -u www-data nextcloud-test php occ app:enable nextshuttle
 docker exec -u www-data nextcloud-test php /tmp/nextshuttle-integration.php

@@ -68,7 +68,12 @@ check(isset($view['share_code'],$view['encryption_key'])&&!str_contains($view['s
 $count=count($destination->getDirectoryListing());work();check(count($destination->getDirectoryListing())===$count,'Retry duplicated an import');
 uploadFixture($inboxRow,'reject-this-ci-file','blocked.txt');work();check(count($destination->getDirectoryListing())===$count,'Rejected upload was imported');
 $poll=$server->get(\OCA\NextShuttle\BackgroundJob\PollEvents::class);$run=new ReflectionMethod($poll,'run');$run->invoke($poll,null);
-check(count($events->visible('alice'))>0,'Owner audit events missing');check(count($events->visible('bob'))===0,'Unrelated user can read audit events');
+check(count($events->visible('alice'))>0,'Owner audit events missing');
+check(count(array_filter($events->visible('alice'),static fn($event)=>!empty($event['client_ip'])))>0,'Public visitor IP metadata did not reach Nextcloud');
+$notice=$server->get(\OCP\Notification\IManager::class)->createNotification();
+$notice->setApp('nextshuttle')->setUser('alice')->setDateTime(new DateTime())->setObject('event','999')->setSubject('security_event',['kind'=>'page_accessed','client_ip'=>'8.8.8.8','country'=>'DE','ip_source'=>'verified_proxy']);
+$prepared=$server->get(\OCA\NextShuttle\Notification\Notifier::class)->prepare($notice,'en');
+check(str_contains($prepared->getParsedMessage(),'8.8.8.8')&&str_contains($prepared->getParsedMessage(),'Germany'),'Notification did not include IP and estimated country');check(count($events->visible('bob'))===0,'Unrelated user can read audit events');
 $db=$server->get(\OCP\IDBConnection::class);
 foreach (['admin','second-admin','alice'] as $uid) {
     $q=$db->getQueryBuilder();$q->select($q->func()->count('*'))->from('notifications')->where($q->expr()->eq('app',$q->createNamedParameter('nextshuttle')))->andWhere($q->expr()->eq('user',$q->createNamedParameter($uid)));

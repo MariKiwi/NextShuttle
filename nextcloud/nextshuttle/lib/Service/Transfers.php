@@ -58,6 +58,7 @@ class Transfers {
     public static function publicRow(array $row): array {
         $out=array_intersect_key($row,array_flip(['id','label','kind','state','created','expires','attempts','node_id']));
         $out['protection']=($row['secret']['crypto']??1)>=2?'password-encrypted':'legacy';
+        $out['limits']=array_intersect_key($row['options'],array_flip(['max_uses','max_files','max_bytes','size']));
         $out['usage']=$row['options']['usage']??[];
         if ($row['state']==='ready'&&$row['expires']>time()) {
             if ($row['kind']==='download') { $code='D.'.$row['id'].'.'.$row['secret']['token'].'.'.$row['secret']['key']; }

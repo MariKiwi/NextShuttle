@@ -82,3 +82,10 @@ Finish [staging.md](staging.md) before opening the public route.
 Native LMD scans hold a shared definition lock. The updater holds an exclusive lock and records hashes of the complete definition set after a successful upstream check. Missing/stale receipts, partial updates or changed definition files block clearance; archive publication timestamps alone do not represent the last update check.
 
 Incoming creation uses exclusive `xb` mode through Nextcloud storage and updates its native file cache. Storage backends that cannot provide exclusive creation block import. Test your actual local/external/encrypted storage backend during staging; no overwrite fallback is provided. LMD verification age measures a successful upstream update check; it does not imply that the publisher released new signatures that day. Engine and signature versions accompany scan receipts.
+
+
+## Upgrading to 0.3
+
+Build/package the app with its JavaScript, replace the existing app code in `custom_apps/nextshuttle` using your normal app update procedure, and run `php occ upgrade` as the Nextcloud web user. Preserve Nextcloud data/configuration and the relay volume/secrets. The new migration adds nullable visitor metadata columns. Rebuild/recreate the relay services and reload Nextcloud to load the new JS/CSS. This does not require changing your NPM host-gateway routing.
+
+Create a fresh share to use v2 password-bound encryption; existing legacy links cannot be upgraded in place. The creation form generates a password; retain it and send it separately. For original visitor IPs and country, complete [visitor-attribution.md](visitor-attribution.md), including local database download and authenticated trusted-proxy headers. Unknown/private proxy locations remain explicit until the real-IP chain is correctly configured. Passwords for v2 inboxes must be rotated in Nextcloud, not the relay admin.
