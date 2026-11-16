@@ -48,7 +48,7 @@ for(const id of ['ns-search','ns-filter'])document.getElementById(id)?.addEventL
 document.getElementById('ns-refresh')?.addEventListener('click',()=>refresh(true));
 const settings=document.getElementById('ns-policy');
 if(settings){settings.addEventListener('submit',async event=>{event.preventDefault();const fields=new FormData(settings),policy={};
- for(const [key,value]of fields){if(key==='groups'||key==='types')policy[key]=String(value).split(',').map(x=>x.trim()).filter(Boolean);else if(!['serviceToken','scannerToken','require_download_password'].includes(key))policy[key]=Number(value);}
+ for(const [key,value]of fields){if(key==='groups'||key==='types')policy[key]=String(value).split(',').map(x=>x.trim()).filter(Boolean);else if(!['serviceToken','scannerToken','require_download_password'].includes(key))policy[key]=Math.round(Number(value)*Number(settings.elements.namedItem(key)?.dataset.factor||1));}
  policy.require_download_password=settings.elements.require_download_password.checked;
  const status=document.getElementById('ns-settings-status');try{const result=await api('settings',{policy,serviceToken:fields.get('serviceToken'),scannerToken:fields.get('scannerToken')});status.textContent=result.message;settings.querySelectorAll('input[type=password]').forEach(x=>x.value='');}catch(error){status.textContent=error.message;}
 });}

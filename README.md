@@ -42,3 +42,5 @@ CI additionally checks PHP syntax, PHP/browser crypto interoperability, real Nex
 Details: [upload protection](docs/upload-protection.md), [events and notifications](docs/events-and-notifications.md), [security policy](SECURITY.md).
 
 Version 0.3 adds [password-bound encryption](docs/encryption-v2.md) and [visitor IP/country attribution](docs/visitor-attribution.md). See those upgrade notes before updating a running instance.
+
+Helios AIO upgrade commands: [upgrade-aio-0.3.md](docs/upgrade-aio-0.3.md).

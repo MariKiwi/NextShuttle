@@ -30,7 +30,8 @@ class Visitors:
                 if not -86400<=age<=90*86400:return None,'database_outdated'
                 record=self.reader.get(str(address)) or {};code=(record.get('country') or {}).get('iso_code')
                 return (code,'local_database') if isinstance(code,str) and re.fullmatch('[A-Z]{2}',code) and code!='ZZ' else (None,'country_unknown')
-        except (OSError,ValueError,TypeError,AttributeError,ImportError):return None,'database_unavailable'
+        except FileNotFoundError:return None,'database_missing'
+        except Exception:return None,'database_unavailable'
     def resolve(self,peer,headers):
         address=ipaddress.ip_address(peer);source='peer'
         trusted=bool(self.token) and any(address in network for network in self.proxies)

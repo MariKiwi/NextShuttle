@@ -396,7 +396,12 @@ def main():
         raise SystemExit("Public URL must be an HTTPS origin with an optional base path")
     from relay.visitor import Visitors
     proxy_file=Path(os.environ.get('NEXTSHUTTLE_PROXY_TOKEN_FILE','/proxy/forwarded_token'))
-    proxy_token=proxy_file.read_text().strip() if args.mode=='public' and proxy_file.is_file() else ''
+    proxy_token=''
+    if args.mode=='public':
+        try:proxy_token=proxy_file.read_text().strip()
+        except FileNotFoundError:pass
+        except OSError:
+            print('Visitor IP forwarding is unverified: proxy token is unreadable; check UID 10001 read permissions',flush=True)
     visitors=Visitors(os.environ.get('NEXTSHUTTLE_TRUSTED_PROXIES',''),proxy_token,os.environ.get('NEXTSHUTTLE_GEOIP_DATABASE','/geoip/country.mmdb'))
     server = BoundedServer((args.bind, args.port), handler(store,args.mode,token,public_url,admin_password,visitors=visitors))
     stopped = threading.Event()

@@ -23,6 +23,16 @@ try{
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  const clipped=await page.locator('.ns-header,.ns-overview,.ns-toolbar,.ns-card,.ns-secret').evaluateAll(nodes=>nodes.filter(node=>{const r=node.getBoundingClientRect();return r.left< -1||r.right>innerWidth+1;}).map(node=>node.className));expect(clipped).toEqual([]);
  const positions=await page.locator('.ns-header,.ns-overview,.ns-transfer-section').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().top));expect(positions[0]).toBeLessThan(positions[1]);expect(positions[1]).toBeLessThan(positions[2]);
+ await page.getByText('Recent security events',{exact:true}).click();await expect(page.getByRole('columnheader',{name:'Visitor IP',exact:true})).toBeVisible();await expect(page.getByRole('link',{name:'IP Geolocation by DB-IP',exact:true})).toHaveAttribute('href','https://db-ip.com');
  console.log('Real Nextcloud dashboard: visible code/key, clipboard, search and responsive layout passed');
  await context.close();
+ const adminContext=await browser.newContext({ignoreHTTPSErrors:true}),adminPage=await adminContext.newPage();screenshotPage=adminPage;
+ await adminPage.goto(base+'/login');const adminToken=await adminPage.locator('[data-requesttoken]').first().getAttribute('data-requesttoken');
+ const adminLogin=await adminContext.request.post(base+'/login',{form:{user:'admin',password:'ephemeral-ci-admin-password-246810',requesttoken:adminToken,redirect_url:'/index.php/settings/admin/additional'},headers:{Origin:base,Referer:base+'/login'},maxRedirects:0});expect([302,303]).toContain(adminLogin.status());
+ await adminPage.goto(base+'/index.php/settings/admin/additional');
+ const policy=adminPage.locator('#ns-policy');await expect(policy).toBeVisible();await policy.locator('[name=max_ttl]').fill('48');
+ const saved=adminPage.waitForRequest(request=>request.method()==='POST'&&request.url().endsWith('/apps/nextshuttle/settings'));
+ await policy.getByRole('button',{name:'Save NextShuttle settings',exact:true}).click();expect((await saved).postDataJSON().policy.max_ttl).toBe(172800);
+ await expect(adminPage.locator('#ns-settings-status')).toContainText('Saved');
+ await adminPage.setViewportSize({width:1440,height:1000});await adminPage.screenshot({path:'test-results/nextcloud-settings-desktop.png',fullPage:true});await adminContext.close();
 }catch(error){if(screenshotPage)await screenshotPage.screenshot({path:'test-results/nextcloud-dashboard-failure.png',fullPage:true}).catch(()=>{});throw error;}finally{await browser.close();}
