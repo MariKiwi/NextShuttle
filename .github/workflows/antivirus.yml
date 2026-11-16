@@ -1,7 +1,6 @@
 name: Real antivirus staging
 on: [push, pull_request]
 permissions: {contents: read}
-env: {NEXTSHUTTLE_BIND_IP: '127.0.0.1'}
 jobs:
   real-engines:
     runs-on: ubuntu-latest
@@ -15,10 +14,17 @@ jobs:
           for name,char in [('service_token','r'),('scanner_token','s'),('admin_password','a')]:
               p=Path('secrets')/name;p.write_text(char*64);p.chmod(0o444)
           PY
+      - run: |
+          gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+          echo "NEXTSHUTTLE_BIND_IP=$gateway" >> "$GITHUB_ENV"
       - run: docker compose build shuttle-ingestion
       - run: docker compose up -d shuttle-signatures shuttle-clamd shuttle-ingestion
       - run: docker compose exec -T shuttle-ingestion python3 - < tests/live_antivirus.py
       - run: docker compose exec -T shuttle-ingestion python3 - < tests/engine_probe.py
+      - run: |
+          docker compose build shuttle-private shuttle-public
+          docker compose up -d shuttle-private shuttle-public
+          docker run --rm -i --network bridge --add-host=shuttle-gateway:host-gateway --entrypoint python3 nextshuttle-ingestion:development - < tests/gateway_probe.py
       - if: failure()
         run: |
           docker compose logs --tail=100 shuttle-signatures shuttle-clamd shuttle-ingestion
