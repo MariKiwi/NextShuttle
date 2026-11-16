@@ -21,6 +21,8 @@ try{
  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'test-results/nextcloud-dashboard-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'test-results/nextcloud-dashboard-mobile.png',fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ const clipped=await page.locator('.ns-header,.ns-overview,.ns-toolbar,.ns-card,.ns-secret').evaluateAll(nodes=>nodes.filter(node=>{const r=node.getBoundingClientRect();return r.left< -1||r.right>innerWidth+1;}).map(node=>node.className));expect(clipped).toEqual([]);
+ const positions=await page.locator('.ns-header,.ns-overview,.ns-transfer-section').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().top));expect(positions[0]).toBeLessThan(positions[1]);expect(positions[1]).toBeLessThan(positions[2]);
  console.log('Real Nextcloud dashboard: visible code/key, clipboard, search and responsive layout passed');
  await context.close();
 }catch(error){if(screenshotPage)await screenshotPage.screenshot({path:'test-results/nextcloud-dashboard-failure.png',fullPage:true}).catch(()=>{});throw error;}finally{await browser.close();}

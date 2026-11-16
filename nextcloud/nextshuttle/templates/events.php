@@ -4,7 +4,7 @@ declare(strict_types=1);
 use OCA\NextShuttle\Service\EventCatalog;
 ?>
 <div id="app-content"><div id="app-content-wrapper" class="ns-area">
-    <header class="ns-header"><div><p class="ns-eyebrow">PRIVATE FILE SHUTTLE</p><h1>NextShuttle</h1><p>Share a file. Receive an upload. Keep control.</p></div><a class="ns-files-link" href="<?php p(\OC::$server->get(\OCP\IURLGenerator::class)->linkToRoute('files.view.index')); ?>">Open Files</a></header>
+    <div class="ns-header"><div><p class="ns-eyebrow">PRIVATE FILE SHUTTLE</p><h1>NextShuttle</h1><p>Share a file. Receive an upload. Keep control.</p></div><a class="ns-files-link" href="<?php p(\OC::$server->get(\OCP\IURLGenerator::class)->linkToRoute('files.view.index')); ?>">Open Files</a></div>
     <div class="ns-overview"><div><strong id="ns-ready">0</strong><span>Ready to share</span></div><div><strong id="ns-inboxes">0</strong><span>Open upload inboxes</span></div><div><strong id="ns-total">0</strong><span>Your transfers</span></div></div>
     <section class="ns-transfer-section"><div class="ns-toolbar"><label class="ns-search-label">Find a transfer<input id="ns-search" type="search" placeholder="Search filenames or folders"></label><label>Show<select id="ns-filter"><option value="all">All transfers</option><option value="download">Shared files</option><option value="inbox">Upload inboxes</option></select></label><button id="ns-refresh">Refresh</button><span id="ns-refresh-status" role="status"></span></div>
     <div id="ns-transfers" aria-live="polite">Loading your transfers…</div>
@@ -20,5 +20,7 @@ use OCA\NextShuttle\Service\EventCatalog;
             <td><?php p($event['parent_id'] ?? $event['object_id'] ?? 'Unidentified'); ?></td>
         </tr>
     <?php endforeach; ?>
-    </tbody></table>
+    </tbody></table></div>
+    <p class="ns-hint">Country is an estimate for the observed address, which may belong to a VPN or proxy. <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a>.</p>
+    </details>
 </div></div>
