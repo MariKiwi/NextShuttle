@@ -18,7 +18,7 @@ jobs:
           gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
           echo "NEXTSHUTTLE_BIND_IP=$gateway" >> "$GITHUB_ENV"
       - run: docker compose build shuttle-ingestion
-      - run: docker compose up -d shuttle-signatures shuttle-clamd shuttle-ingestion
+      - run: docker compose up -d shuttle-signatures shuttle-clamd shuttle-ingestion shuttle-scanner-gateway
       - run: docker compose exec -T shuttle-ingestion python3 - < tests/live_antivirus.py
       - run: docker compose exec -T shuttle-ingestion python3 - < tests/engine_probe.py
       - run: |

@@ -45,7 +45,6 @@ services:
   shuttle-ingestion:
     build: {context: ., dockerfile: Dockerfile.ingestion}
     image: nextshuttle-ingestion:development
-    ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9082:8082"]
     secrets: [scanner_token]
     volumes: ["clam-socket:/run/nextshuttle", "lmd-sigs:/usr/local/maldetect/sigs:ro"]
     tmpfs:
@@ -60,6 +59,23 @@ services:
     mem_limit: 1g
     cpus: 1
     restart: unless-stopped
+  shuttle-scanner-gateway:
+    image: nginx:stable-alpine
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
+    user: "10001:10001"
+    depends_on: [shuttle-ingestion]
+    ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9082:8082"]
+    volumes: ["./ingestion/gateway.conf:/etc/nginx/nginx.conf:ro"]
+    tmpfs: ["/tmp:size=64m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev"]
+    networks: [scanner-ingress, scanner-backend]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
   shuttle-clamd:
     image: nextshuttle-ingestion:development
     build: {context: ., dockerfile: Dockerfile.ingestion}
@@ -97,6 +113,7 @@ volumes:
 networks:
   public-backend:
   private-backend:
+  scanner-ingress:
   scanner-backend:
     internal: true
   signature-updates:
