@@ -44,3 +44,5 @@ Details: [upload protection](docs/upload-protection.md), [events and notificatio
 Version 0.3 adds [password-bound encryption](docs/encryption-v2.md) and [visitor IP/country attribution](docs/visitor-attribution.md). See those upgrade notes before updating a running instance.
 
 Helios AIO upgrade commands: [upgrade-aio-0.3.md](docs/upgrade-aio-0.3.md).
+
+Interface/network update: [0.3.1 deployment guide](docs/upgrade-0.3.1.md). The default topology now uses two networks; an optional override reuses an existing backend bridge.

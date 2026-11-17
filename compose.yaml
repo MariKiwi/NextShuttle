@@ -17,7 +17,7 @@ services:
       NEXTSHUTTLE_GEOIP_DATABASE: /geoip/country.mmdb
       NEXTSHUTTLE_PROXY_TOKEN_FILE: /proxy/forwarded_token
     volumes: ["shuttle-data:/data", "./geoip:/geoip:ro", "./proxy:/proxy:ro"]
-    networks: [public-backend]
+    networks: [backend]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -35,7 +35,7 @@ services:
     environment: *environment
     volumes: ["shuttle-data:/data"]
     secrets: [service_token, admin_password]
-    networks: [private-backend]
+    networks: [backend]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -71,7 +71,7 @@ services:
     ports: ["${NEXTSHUTTLE_BIND_IP:-172.19.0.1}:9082:8082"]
     volumes: ["./ingestion/gateway.conf:/etc/nginx/nginx.conf:ro"]
     tmpfs: ["/tmp:size=64m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev"]
-    networks: [scanner-ingress, scanner-backend]
+    networks: [backend, scanner-backend]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -100,7 +100,7 @@ services:
     volumes: ["clam-definitions:/var/lib/clamav", "clam-socket:/run/nextshuttle", "lmd-sigs:/usr/local/maldetect/sigs", "lmd-clean:/usr/local/maldetect/clean"]
     tmpfs: ["/tmp:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev", "/usr/local/maldetect/pub/shuttle:size=128m,uid=10001,gid=10001,mode=0700,noexec,nosuid,nodev"]
     read_only: true
-    networks: [signature-updates]
+    networks: [backend]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 1g
@@ -114,12 +114,9 @@ volumes:
   lmd-sigs:
   lmd-clean:
 networks:
-  public-backend:
-  private-backend:
-  scanner-ingress:
+  backend:
   scanner-backend:
     internal: true
-  signature-updates:
 secrets:
   service_token:
     file: ./secrets/service_token

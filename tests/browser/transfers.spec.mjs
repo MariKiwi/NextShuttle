@@ -37,7 +37,7 @@ test('upload stays encrypted on the relay and binds the trusted inbox key',async
 test('private admin authentication, CSRF and audit export work in-browser',async({browser,request})=>{
  const t=await privatePost(request,'downloads',{bytes:4,ttl:3600});
  const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
- await page.goto('https://localhost:9085/');await page.getByLabel('Administrator password').fill('a'.repeat(64));await page.getByRole('button',{name:'Sign in',exact:true}).click();await expect(page.locator('#summary')).toContainText('Storage capacity');await expect(page.getByRole('heading',{name:'NextShuttle',exact:true})).toBeVisible();
+ await page.goto('https://localhost:9085/');await page.getByLabel('Administrator password').fill('a'.repeat(64));await page.getByRole('button',{name:'Sign in',exact:true}).click();await expect(page.locator('#summary')).toContainText('Storage capacity');await expect(page.getByRole('heading',{name:'Transfer overview',exact:true})).toBeVisible();
  const row=page.locator('#transfers p').filter({hasText:t.id});await row.getByRole('button',{name:'Revoke',exact:true}).click();
  await expect(page.locator('#transfers').getByText(t.id,{exact:false})).toHaveCount(0);
  const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Export complete audit journal'}).click();const download=await waiting;
@@ -69,4 +69,20 @@ test('v2 public uploads are encrypted with password and inbox key',async({page,r
  const response=await request.get(privateURL+'uploads',{headers:{Authorization:'Bearer '+'r'.repeat(64)}}),upload=(await response.json()).find(r=>r.inbox===id);
  const fetched=await request.get(privateURL+`uploads/${upload.id}/blob`,{headers:{Authorization:'Bearer '+'r'.repeat(64)}}),data=new Uint8Array(await fetched.body());
  expect(await (await decrypt(data,null,box,protection)).blob.text()).toBe('private password protected upload');
+});
+
+
+test('redesigned portal and operations dashboard fit the viewport',async({page},testInfo)=>{
+ await page.goto('/nextshuttle/');
+ await expect(page.getByRole('heading',{name:'Unlock your transfer'})).toBeVisible();
+ await expect(page.locator('footer')).toContainText('0.3.1');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('public.png'),fullPage:true});
+ await page.goto('https://localhost:9085/');
+ await page.getByLabel('Administrator password').fill('a'.repeat(64));
+ await page.getByRole('button',{name:'Sign in',exact:true}).click();
+ await expect(page.locator('#metric-downloads')).not.toHaveText('—');
+ await expect(page.getByRole('heading',{name:'Transfer overview'})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:testInfo.outputPath('admin.png'),fullPage:true});
 });

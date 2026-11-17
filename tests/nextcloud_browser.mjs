@@ -9,7 +9,7 @@ try{
  const login=await context.request.post(base+'/login',{form:{user:'alice',password:'ephemeral-ci-password-246810',requesttoken:token,redirect_url:'/index.php/apps/nextshuttle/'},headers:{Origin:base,Referer:base+'/login'},maxRedirects:0});
  expect([302,303]).toContain(login.status());
  await page.goto(base+'/index.php/apps/nextshuttle/');
- await expect(page.locator('.ns-header h1')).toHaveText('NextShuttle');
+ await expect(page.locator('.ns-header h1')).toHaveText('Your transfers');
  const card=page.locator('.ns-card').filter({has:page.getByLabel('Share code',{exact:true})}).first();
  await expect(card.getByLabel('Share code',{exact:true})).toBeVisible();
  const share=await card.getByLabel('Share code',{exact:true}).inputValue(),key=await card.getByLabel('Encryption key',{exact:true}).inputValue();

@@ -1,0 +1,5 @@
+# Optional existing backend bridge. Use this file for every Compose command.
+networks:
+  backend:
+    external: true
+    name: ${NEXTSHUTTLE_BACKEND_NETWORK:?Set NEXTSHUTTLE_BACKEND_NETWORK to an existing Docker network}
