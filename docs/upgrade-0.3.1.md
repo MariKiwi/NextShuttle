@@ -1,6 +1,6 @@
-# Helios interface and network update (0.3.1)
+# Helios interface and network update (0.3.2)
 
-The release is visibly identified as **0.3.1** on the public footer, relay admin footer and Nextcloud workspace. If those labels are absent, the old code is still being served. The native app must be copied separately; rebuilding Compose does not install it into AIO.
+The release is visibly identified as **0.3.2** on the public footer, relay admin footer and Nextcloud workspace. If those labels are absent, the old code is still being served. The native app must be copied separately; rebuilding Compose does not install it into AIO.
 
 From `~/containers/NextShuttle`, stop the old project **before pulling the new network topology**. This removes its five old project networks while preserving volumes and credentials:
 
@@ -54,8 +54,8 @@ Verify:
 
 ```sh
 docker exec -u www-data nextcloud-aio-nextcloud php occ config:app:get nextshuttle installed_version
-curl -fsS http://172.19.0.1:9080/nextshuttle/ | rg 'Interface 0.3.1'
+curl -fsS http://172.19.0.1:9080/nextshuttle/ | rg 'Interface 0.3.2'
 docker compose ps
 ```
 
-Expect version `0.3.1`, a split public transfer portal, a full-width relay operations dashboard after sign-in, and a themed Nextcloud workspace with side navigation. Hard-refresh the browser. Check new download and upload flows and scanner readiness before using real files. Network changes can change the observed relay peer: revisit `NEXTSHUTTLE_TRUSTED_PROXIES` if verified visitor attribution stops working. Never broaden the trust range just to make it pass.
+Expect version `0.3.2`, a split public transfer portal, a full-width relay operations dashboard after sign-in, and a themed Nextcloud workspace with side navigation. Hard-refresh the browser. Check new download and upload flows and scanner readiness before using real files. Network changes can change the observed relay peer: revisit `NEXTSHUTTLE_TRUSTED_PROXIES` if verified visitor attribution stops working. Never broaden the trust range just to make it pass.

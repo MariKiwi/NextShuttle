@@ -59,7 +59,13 @@ form.addEventListener('submit',async event=>{
  }catch(error){say(error.message||'Transfer failed');}
  finally{if(protection)(await ready()).memzero(protection.root);$('submit').disabled=false;}
 });
-$('code').addEventListener('input',()=>{const upload=$('code').value.trim().match(/(?:^|#)U2?\./);$('upload-fields').hidden=!upload;$('submit').textContent=upload?'Encrypt and upload':'Decrypt and download';});
+$('code').addEventListener('input',()=>{
+ const value=$('code').value.trim(),upload=value.match(/(?:^|#)U2?\./);
+ $('upload-fields').hidden=!upload;$('submit').textContent=upload?'Encrypt and upload':'Decrypt and download';
+ let raw=value;try{if(value.startsWith('http'))raw=decodeURIComponent(new URL(value).hash.slice(1));}catch{}
+ const parts=raw.split('.'),included=(parts[0]==='D2'&&parts.length===5)||(parts[0]==='U2'&&parts.length===4)||(parts[0]==='D'&&parts.length===4)||(parts[0]==='U'&&parts.length===3);
+ $('key-fields').hidden=included;$('included-key').hidden=!included;
+});
 $('code').dispatchEvent(new Event('input'));
 async function recordView(){try{const sodium=await ready(),code=parse();if(code.kind==='D')await fetch(`./api/v1/downloads/${code.id}/view`,{method:'POST',headers:{Authorization:'Bearer '+code.token},body:'',credentials:'omit',referrerPolicy:'no-referrer'});else await fetch(`./api/v1/inboxes/${code.id}/view`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({public_key:sodium.to_base64(code.public,sodium.base64_variants.ORIGINAL)}),credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer'});}catch{}}
 $('code').addEventListener('change',recordView);if(location.hash)consumeHash();else recordView();

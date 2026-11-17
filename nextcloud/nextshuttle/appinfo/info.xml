@@ -5,7 +5,7 @@
   <name>NextShuttle</name>
   <summary>Private file shuttle and security events</summary>
   <description>Development build: encrypted public downloads and upload inboxes for private Nextcloud, private dual-engine scanning, sharing policies, audit history and administrator/owner notifications.</description>
-  <version>0.3.1</version>
+  <version>0.3.2</version>
   <licence>agpl</licence>
   <author>NextShuttle contributors</author>
   <namespace>NextShuttle</namespace>

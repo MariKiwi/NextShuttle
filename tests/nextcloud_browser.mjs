@@ -1,5 +1,6 @@
 import {chromium,expect} from '@playwright/test';
 import {mkdir} from 'node:fs/promises';
+import {build} from 'esbuild';
 const base='https://localhost:9083',browser=await chromium.launch();let screenshotPage;
 await mkdir('test-results',{recursive:true});
 try{
@@ -25,6 +26,18 @@ try{
  const positions=await page.locator('.ns-header,.ns-overview,.ns-transfer-section').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().top));expect(positions[0]).toBeLessThan(positions[1]);expect(positions[1]).toBeLessThan(positions[2]);
  await page.getByText('Recent security events',{exact:true}).click();await expect(page.getByRole('columnheader',{name:'Visitor IP',exact:true})).toBeVisible();await expect(page.getByRole('link',{name:'IP Geolocation by DB-IP',exact:true})).toHaveAttribute('href','https://db-ip.com');
  console.log('Real Nextcloud dashboard: visible code/key, clipboard, search and responsive layout passed');
+ // Exercise the production dialog module against the real Nextcloud policy endpoint.
+ const dialogBundle=await build({entryPoints:['web/api.mjs'],bundle:true,format:'iife',globalName:'PasswordDialogTest',write:false});
+ await page.evaluate(dialogBundle.outputFiles[0].text+';window.passwordDialogTest=PasswordDialogTest;');
+ await page.evaluate(()=>window.passwordDialogTest.openTransfer({type:'file',basename:'Password options preview',fileid:0}));
+ const dialog=page.locator('.ns-dialog'),source=dialog.getByLabel('Password source'),password=dialog.locator('input[autocomplete="new-password"]');
+ await expect(source).toHaveValue('custom');await expect(password).toHaveValue('');await expect(password).toBeEditable();
+ await source.selectOption('random');await expect(password).toHaveAttribute('readonly','');expect((await password.inputValue()).length).toBeGreaterThanOrEqual(16);
+ const generated=await password.inputValue();await dialog.getByRole('button',{name:'Generate another password'}).click();expect(await password.inputValue()).not.toBe(generated);
+ await source.selectOption('custom');await expect(password).toHaveValue('');await expect(password).toBeEditable();
+ await password.fill('my own long transfer password');await dialog.getByRole('button',{name:'Copy password',exact:true}).click();expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe('my own long transfer password');
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();
+ console.log('Real Nextcloud password dialog: custom default, random generation, regeneration and clipboard passed');
  await context.close();
  const adminContext=await browser.newContext({ignoreHTTPSErrors:true}),adminPage=await adminContext.newPage();screenshotPage=adminPage;
  await adminPage.goto(base+'/login');const adminToken=await adminPage.locator('[data-requesttoken]').first().getAttribute('data-requesttoken');

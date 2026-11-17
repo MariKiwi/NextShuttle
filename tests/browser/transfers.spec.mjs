@@ -12,9 +12,9 @@ test('protected download decrypts in a real browser under CSP',async({page,reque
  const put=await request.put(privateURL+`downloads/${t.id}/blob`,{headers:{Authorization:'Bearer '+'r'.repeat(64)},data:Buffer.from(await encrypted.blob.arrayBuffer())});expect(put.ok()).toBeTruthy();
  const code=`D.${t.id}.${t.access_token}.${b64(encrypted.key)}`;
  await page.goto('/nextshuttle/#'+code);await expect(page).toHaveURL(/nextshuttle\/$/);
- await page.getByLabel('Password',{exact:false}).fill('not the correct password');await page.getByRole('button',{name:'Decrypt and download'}).click();
+ await page.getByLabel('Transfer password',{exact:false}).fill('not the correct password');await page.getByRole('button',{name:'Decrypt and download'}).click();
  await expect(page.getByRole('status')).toContainText('Code invalid');
- await page.getByLabel('Password',{exact:false}).fill('a separate browser password');
+ await page.getByLabel('Transfer password',{exact:false}).fill('a separate browser password');
  const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Decrypt and download'}).click();
  const download=await waiting;expect(download.suggestedFilename()).toBe('browser.txt');expect((await readFile(await download.path())).toString()).toBe('ordinary browser download');
  expect(errors).toEqual([]);
@@ -23,7 +23,7 @@ test('upload stays encrypted on the relay and binds the trusted inbox key',async
  const box=sodium.crypto_box_keypair(),password='a static browser upload password';
  const inbox=await privatePost(request,'inboxes',{password,ttl:3600,max_files:4,max_bytes:1048576,public_key:sodium.to_base64(box.publicKey,sodium.base64_variants.ORIGINAL)});
  await page.goto(`/nextshuttle/#U.${inbox.id}.${b64(box.publicKey)}`);
- await page.getByLabel('Password',{exact:false}).fill(password);
+ await page.getByLabel('Transfer password',{exact:false}).fill(password);
  await page.getByLabel('File',{exact:true}).setInputFiles({name:'incoming.txt',mimeType:'text/plain',buffer:Buffer.from('ordinary browser upload')});
  await page.getByRole('button',{name:'Encrypt and upload'}).click();await expect(page.getByRole('status')).toContainText('Encrypted upload received');
  const list=await request.get(privateURL+'uploads',{headers:{Authorization:'Bearer '+'r'.repeat(64)}});const rows=await list.json();const upload=rows.find(r=>r.inbox===inbox.id);expect(upload).toBeTruthy();
@@ -31,7 +31,7 @@ test('upload stays encrypted on the relay and binds the trusted inbox key',async
  expect(Buffer.from(bytes).includes(Buffer.from('ordinary browser upload'))).toBeFalsy();
  const plain=await decrypt(bytes,null,box);expect(await plain.blob.text()).toBe('ordinary browser upload');
  const wrong=sodium.crypto_box_keypair();await page.goto(`/nextshuttle/#U.${inbox.id}.${b64(wrong.publicKey)}`);
- await page.getByLabel('Password',{exact:false}).fill(password);await page.getByLabel('File',{exact:true}).setInputFiles({name:'incoming.txt',mimeType:'text/plain',buffer:Buffer.from('must not send')});
+ await page.getByLabel('Transfer password',{exact:false}).fill(password);await page.getByLabel('File',{exact:true}).setInputFiles({name:'incoming.txt',mimeType:'text/plain',buffer:Buffer.from('must not send')});
  await page.getByRole('button',{name:'Encrypt and upload'}).click();await expect(page.getByRole('status')).toContainText('does not match');
 });
 test('private admin authentication, CSRF and audit export work in-browser',async({browser,request})=>{
@@ -53,9 +53,9 @@ test('v2 public downloads accept separate code/key and keep the password local',
  expect((await request.put(privateURL+`downloads/${id}/blob`,{headers:{Authorization:'Bearer '+'r'.repeat(64)},data:Buffer.from(await encrypted.blob.arrayBuffer())})).ok()).toBeTruthy();
  const sent=[];page.on('request',r=>{if(r.url().includes('/api/'))sent.push(r.postData()||'');});
  await page.goto('/nextshuttle/');await page.getByLabel('Transfer code').fill(`D2.${id}.${token}.${salt}`);
- await page.getByLabel('Encryption key',{exact:false}).fill(b64(seed));await page.getByLabel('Password',{exact:false}).fill('an incorrect long password');
+ await page.getByLabel('Encryption key',{exact:false}).fill(b64(seed));await page.getByLabel('Transfer password',{exact:false}).fill('an incorrect long password');
  await page.getByRole('button',{name:'Decrypt and download'}).click();await expect(page.getByRole('status')).toContainText('Code invalid');
- await page.getByLabel('Password',{exact:false}).fill(password);const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Decrypt and download'}).click();
+ await page.getByLabel('Transfer password',{exact:false}).fill(password);const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Decrypt and download'}).click();
  const download=await waiting;expect((await readFile(await download.path())).toString()).toBe('password protected browser content');
  expect(sent.join(' ')).not.toContain(password);expect(sent.join(' ')).not.toContain(b64(seed));
 });
@@ -63,7 +63,7 @@ test('v2 public uploads are encrypted with password and inbox key',async({page,r
  const box=sodium.crypto_box_keypair(),id=sodium.to_hex(sodium.randombytes_buf(16)),salt=b64(sodium.randombytes_buf(16)),password='a password protected browser inbox',code=`U2.${id}.${b64(box.publicKey)}.${salt}`,protection=await protect(code,password);
  await privatePost(request,'inboxes',{id,password:protection.authorization,ttl:3600,max_files:3,max_bytes:1048576,public_key:sodium.to_base64(box.publicKey,sodium.base64_variants.ORIGINAL)});
  const sent=[];page.on('request',r=>{if(r.url().includes('/api/')&&r.method()==='POST')sent.push(r.postData()||'');});
- await page.goto('/nextshuttle/#'+code);await page.getByLabel('Password',{exact:false}).fill(password);await page.getByLabel('File',{exact:true}).setInputFiles({name:'protected.txt',mimeType:'text/plain',buffer:Buffer.from('private password protected upload')});
+ await page.goto('/nextshuttle/#'+code);await page.getByLabel('Transfer password',{exact:false}).fill(password);await page.getByLabel('File',{exact:true}).setInputFiles({name:'protected.txt',mimeType:'text/plain',buffer:Buffer.from('private password protected upload')});
  await page.getByRole('button',{name:'Encrypt and upload'}).click();await expect(page.getByRole('status')).toContainText('Encrypted upload received');
  expect(sent.join(' ')).not.toContain(password);
  const response=await request.get(privateURL+'uploads',{headers:{Authorization:'Bearer '+'r'.repeat(64)}}),upload=(await response.json()).find(r=>r.inbox===id);
@@ -75,7 +75,7 @@ test('v2 public uploads are encrypted with password and inbox key',async({page,r
 test('redesigned portal and operations dashboard fit the viewport',async({page},testInfo)=>{
  await page.goto('/nextshuttle/');
  await expect(page.getByRole('heading',{name:'Unlock your transfer'})).toBeVisible();
- await expect(page.locator('footer')).toContainText('0.3.1');
+ await expect(page.locator('footer')).toContainText('0.3.2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:testInfo.outputPath('public.png'),fullPage:true});
  await page.goto('https://localhost:9085/');
@@ -85,4 +85,19 @@ test('redesigned portal and operations dashboard fit the viewport',async({page},
  await expect(page.getByRole('heading',{name:'Transfer overview'})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:testInfo.outputPath('admin.png'),fullPage:true});
+});
+
+
+test('full links include the key while compact codes request it separately',async({page})=>{
+ await page.goto('/nextshuttle/');
+ const id='a'.repeat(32),token=b64(sodium.randombytes_buf(32)),key=b64(sodium.randombytes_buf(32)),salt=b64(sodium.randombytes_buf(16));
+ await page.getByLabel('Transfer code').fill(`D2.${id}.${token}.${key}.${salt}`);
+ await expect(page.locator('#key-fields')).toBeHidden();
+ await expect(page.locator('#included-key')).toBeVisible();
+ await page.getByLabel('Transfer code').fill(`D2.${id}.${token}.${salt}`);
+ await expect(page.locator('#key-fields')).toBeVisible();
+ await expect(page.locator('#included-key')).toBeHidden();
+ await page.getByLabel('Transfer code').fill(`${page.url()}#U2.${id}.${key}.${salt}`);
+ await expect(page.locator('#key-fields')).toBeHidden();
+ await expect(page.locator('#upload-fields')).toBeVisible();
 });

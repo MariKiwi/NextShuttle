@@ -46,3 +46,5 @@ Version 0.3 adds [password-bound encryption](docs/encryption-v2.md) and [visitor
 Helios AIO upgrade commands: [upgrade-aio-0.3.md](docs/upgrade-aio-0.3.md).
 
 Interface/network update: [0.3.1 deployment guide](docs/upgrade-0.3.1.md). The default topology now uses two networks; an optional override reuses an existing backend bridge.
+
+[How links, codes, keys and passwords work](docs/passwords-and-codes.md). Interface 0.3.2 adds custom/random password selection and recognises when a full link already includes its key.

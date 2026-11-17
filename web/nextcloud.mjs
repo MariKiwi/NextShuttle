@@ -27,10 +27,11 @@ function render(){
    return box;
   }
   if(t.code){
-   card.append(secret('Share code',t.share_code||t.code));
-   if(t.encryption_key)card.append(secret('Encryption key',t.encryption_key,true));
+   card.append(element('p','Recommended: copy the full link and send the encryption password separately. The recipient does not need to enter the key again.','ns-delivery-help'));
+   const manual=element('details',undefined,'ns-manual');manual.append(element('summary','Use a separate code and key instead'));manual.append(secret('Share code',t.share_code||t.code));
+   if(t.encryption_key)manual.append(secret('Encryption key',t.encryption_key,true));manual.open=true;card.append(manual);
    const link=element('div',undefined,'ns-share-actions'),copyLink=button('Copy full link',()=>copy(t.url,copyLink,status)),open=element('a','Open public page','ns-link');open.href=t.url;open.target='_blank';open.rel='noopener noreferrer';copyLink.classList.add('primary');link.append(copyLink,open);card.append(link);
-   card.append(element('p',t.protection==='password-encrypted'?'The full link includes the code and encryption key. Send the encryption password separately.':'Legacy share: its password controls access only. Create a new share for password-based encryption.','ns-hint'));
+   card.append(element('p',t.protection==='password-encrypted'?'Full link = share code + encryption key. The encryption password is separate and is not recoverable from this page.':'Legacy share: its password controls access only. Create a new share for password-based encryption.','ns-hint'));
   }else if(['queued','preparing','retry'].includes(t.state))card.append(element('p','Your code appears here after private preparation and both malware scans finish. Nextcloud background jobs process this transfer.','ns-hint'));
   const controls=element('div',undefined,'ns-card-controls');
   if(['queued','preparing','ready','retry','revoking','rotating','exhausted'].includes(t.state))controls.append(button(t.kind==='inbox'?'Close inbox':'Revoke share',async()=>{if(t.kind==='inbox'&&!confirm('Close this inbox and discard uploads that have not been imported?'))return;try{await api(`transfers/${t.id}/revoke`,{});await refresh(true);}catch(e){status.textContent=e.message;}}));
