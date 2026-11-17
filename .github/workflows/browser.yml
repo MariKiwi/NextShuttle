@@ -16,5 +16,5 @@ jobs:
       - run: npm run build
       - run: npx playwright test
       - uses: actions/upload-artifact@v4
-        if: failure()
-        with: {name: browser-test-traces, path: test-results/}
+        if: always()
+        with: {name: browser-layout-and-traces, path: test-results/}
