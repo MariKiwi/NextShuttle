@@ -40,7 +40,7 @@ test('private admin authentication, CSRF and audit export work in-browser',async
  await page.goto('https://localhost:9085/');await page.getByLabel('Administrator password').fill('a'.repeat(64));await page.getByRole('button',{name:'Sign in',exact:true}).click();await expect(page.locator('#summary')).toContainText('Storage capacity');await expect(page.getByRole('heading',{name:'Transfer overview',exact:true})).toBeVisible();
  const row=page.locator('#transfers p').filter({hasText:t.id});await row.getByRole('button',{name:'Revoke',exact:true}).click();
  await expect(page.locator('#transfers').getByText(t.id,{exact:false})).toHaveCount(0);
- const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Export complete audit journal'}).click();const download=await waiting;
+ const waiting=page.waitForEvent('download');await page.getByRole('button',{name:'Export audit journal'}).click();const download=await waiting;
  const text=(await readFile(await download.path())).toString();expect(text).toContain('admin_page_accessed');expect(text).not.toContain(t.access_token);expect(text).not.toContain('r'.repeat(64));
  await page.getByRole('button',{name:'Sign out',exact:true}).click();await expect(page.getByLabel('Administrator password')).toBeVisible();
  await context.close();
